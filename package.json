@@ -1,0 +1,8 @@
+{
+  "name": "remotedroid-web",
+  "version": "1.0.0",
+  "description": "High-Performance Zero-Latency WebRTC Remote Android Controller",
+  "scripts": {
+    "start": "npx serve ."
+  }
+}
