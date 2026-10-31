@@ -9,21 +9,14 @@ const DEFAULT_FIREBASE_CONFIG = {
   databaseURL: "https://flex-29864-default-rtdb.firebaseio.com"
 };
 
-// WebRTC Dual-ICE Configuration
+// WebRTC Google Public STUN Configuration
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp',
-        'turns:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -337,9 +330,11 @@ async function startConnection() {
 
     // I. Listen for Phone Answer
     const answerRef = ref(db, `rooms/${roomId}/answer`);
+    let isProcessingAnswer = false;
     onValue(answerRef, async (snapshot) => {
       const data = snapshot.val();
-      if (data && !peerConnection.currentRemoteDescription) {
+      if (data && peerConnection && peerConnection.signalingState === 'have-local-offer' && !isProcessingAnswer) {
+        isProcessingAnswer = true;
         logEvent('SUCCESS', 'SIGNALING', `Phone Answer received! (sdp length: ${data.sdp ? data.sdp.length : 0})`);
         try {
           const remoteDesc = new RTCSessionDescription(data);
@@ -357,6 +352,7 @@ async function startConnection() {
           }
         } catch (e) {
           logEvent('ERROR', 'SDP', `Failed to set remote description: ${e.message}`);
+          isProcessingAnswer = false;
         }
       }
     });
