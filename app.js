@@ -1,20 +1,19 @@
-// RemoteDroid - Samsung M52 WebRTC Controller Engine
+// RemoteDroid / FLEX - Samsung M52 WebRTC Controller Engine
+// Industrial-Grade Telemetry & Diagnostics (SLTL Industrial Standard)
+
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getDatabase, ref, set, onValue, push, remove, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
-// Default Firebase Configuration (Can be customized via Settings Modal)
-// Default points to public high-availability demo RTDB or user's project
+// Default Firebase Configuration
 const DEFAULT_FIREBASE_CONFIG = {
   databaseURL: "https://flex-29864-default-rtdb.firebaseio.com"
 };
 
-// WebRTC Dual-ICE Configuration (Auto-Switching Architecture)
+// WebRTC Dual-ICE Configuration
 const RTC_CONFIG = {
   iceServers: [
-    // 1. Google Public STUN (Unlimited Direct P2P)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    // 2. OpenRelay / Metered TURNS on Port 443 (Firewall Bypass)
     {
       urls: [
         'turn:openrelay.metered.ca:443?transport=tcp',
@@ -39,6 +38,14 @@ let isMouseDown = false;
 let statsInterval = null;
 let lastBytesReceived = 0;
 let lastStatsTime = 0;
+
+// ICE Candidate Queueing State
+let queuedPhoneCandidates = [];
+let isRemoteDescriptionSet = false;
+const processedCandidateKeys = new Set();
+
+// Telemetry & Diagnostic Buffer
+const webLogsBuffer = [];
 
 // DOM Elements
 const connectionDot = document.getElementById('connectionDot');
@@ -80,136 +87,331 @@ const inputRoomId = document.getElementById('inputRoomId');
 const inputPin = document.getElementById('inputPin');
 const inputFirebaseUrl = document.getElementById('inputFirebaseUrl');
 
-// 1. Initialize Firebase
+// Telemetry Drawer Elements
+const telemetryDrawer = document.getElementById('telemetryDrawer');
+const drawerHeader = document.getElementById('drawerHeader');
+const drawerContent = document.getElementById('drawerContent');
+const logCounter = document.getElementById('logCounter');
+const btnDownloadWebLog = document.getElementById('btnDownloadWebLog');
+const btnDownloadPhoneLog = document.getElementById('btnDownloadPhoneLog');
+const btnClearLogs = document.getElementById('btnClearLogs');
+const btnToggleDrawer = document.getElementById('btnToggleDrawer');
+
+// ==========================================
+// 1. INDUSTRIAL LOG ENGINE (Dual-Sink Telemetry)
+// ==========================================
+function logEvent(level, tag, message) {
+  const now = new Date();
+  const timeStr = now.toISOString().replace('T', ' ').substring(0, 23);
+  const logLine = `[${timeStr}][${level}][${tag}] ${message}`;
+
+  // A. Console
+  if (level === 'ERROR') console.error(logLine);
+  else if (level === 'WARN') console.warn(logLine);
+  else console.log(logLine);
+
+  // B. Memory Buffer for file download
+  webLogsBuffer.push(logLine);
+  if (logCounter) {
+    logCounter.innerText = `${webLogsBuffer.length} events`;
+  }
+
+  // C. Visual Telemetry Drawer
+  if (drawerContent) {
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${level.toLowerCase()}`;
+    entry.textContent = logLine;
+    drawerContent.appendChild(entry);
+    drawerContent.scrollTop = drawerContent.scrollHeight;
+  }
+
+  // D. Firebase RTDB Sync (Async non-blocking)
+  if (db) {
+    try {
+      const webLogRef = ref(db, `rooms/${roomId}/telemetry/web`);
+      push(webLogRef, {
+        time: timeStr,
+        level: level,
+        tag: tag,
+        msg: message
+      }).catch(() => {});
+    } catch (e) {}
+  }
+}
+
+// Download Trigger Helper
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Telemetry Drawer UI Handlers
+if (btnToggleDrawer && telemetryDrawer) {
+  btnToggleDrawer.addEventListener('click', (e) => {
+    e.stopPropagation();
+    telemetryDrawer.classList.toggle('expanded');
+    btnToggleDrawer.innerText = telemetryDrawer.classList.contains('expanded') ? '▼ Collapse' : '▲ Expand';
+  });
+}
+
+if (drawerHeader && telemetryDrawer) {
+  drawerHeader.addEventListener('click', () => {
+    telemetryDrawer.classList.toggle('expanded');
+    if (btnToggleDrawer) {
+      btnToggleDrawer.innerText = telemetryDrawer.classList.contains('expanded') ? '▼ Collapse' : '▲ Expand';
+    }
+  });
+}
+
+if (btnClearLogs && drawerContent) {
+  btnClearLogs.addEventListener('click', (e) => {
+    e.stopPropagation();
+    drawerContent.innerHTML = '';
+    webLogsBuffer.length = 0;
+    if (logCounter) logCounter.innerText = '0 events';
+    logEvent('INFO', 'SYSTEM', 'Logs cleared by user.');
+  });
+}
+
+if (btnDownloadWebLog) {
+  btnDownloadWebLog.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const content = webLogsBuffer.join('\n');
+    downloadTextFile(`flex_web_${Date.now()}.log`, content);
+    logEvent('INFO', 'TELEMETRY', 'Web telemetry log downloaded.');
+  });
+}
+
+if (btnDownloadPhoneLog) {
+  btnDownloadPhoneLog.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    logEvent('INFO', 'TELEMETRY', 'Fetching Phone logs from Firebase...');
+    try {
+      const phoneTelemetryRef = ref(db, `rooms/${roomId}/telemetry/phone`);
+      const snapshot = await get(phoneTelemetryRef);
+      if (snapshot.exists()) {
+        const phoneLogs = [];
+        snapshot.forEach((child) => {
+          const item = child.val();
+          if (item) {
+            phoneLogs.push(`[${item.time || 'N/A'}][${item.level || 'INFO'}][${item.tag || 'PHONE'}] ${item.msg || ''}`);
+          }
+        });
+        const content = phoneLogs.join('\n');
+        downloadTextFile(`flex_phone_${Date.now()}.log`, content);
+        logEvent('SUCCESS', 'TELEMETRY', `Phone log file exported (${phoneLogs.length} events).`);
+      } else {
+        logEvent('WARN', 'TELEMETRY', 'No phone logs found in Firebase yet. Is the app running?');
+        alert('No phone logs recorded in Firebase yet. Ensure FLEX app is running on phone and "Start Standby" is tapped.');
+      }
+    } catch (err) {
+      logEvent('ERROR', 'TELEMETRY', `Failed to fetch phone logs: ${err.message}`);
+    }
+  });
+}
+
+// ==========================================
+// 2. FIREBASE & CONNECTION HANDSHAKE
+// ==========================================
 function initFirebase() {
   try {
     const config = { databaseURL: customDbUrl };
     app = initializeApp(config);
     db = getDatabase(app);
-    console.log('[RemoteDroid] Firebase initialized with URL:', customDbUrl);
+    logEvent('INFO', 'FIREBASE', `Firebase RTDB connected: ${customDbUrl} (Room: ${roomId})`);
   } catch (err) {
-    console.error('[RemoteDroid] Firebase Init Error:', err);
+    logEvent('ERROR', 'FIREBASE', `Firebase Init Failure: ${err.message}`);
   }
 }
 
-// 2. Start WebRTC Connection
 async function startConnection() {
+  logEvent('INFO', 'INIT', '=== Starting WebRTC Connection Handshake ===');
   updateStatus('connecting', 'Negotiating Handshake...');
-  placeholderMsg.innerText = 'Sending wake-up signal & connecting to phone...';
+  placeholderMsg.innerText = 'Sending wake-up signal & negotiating WebRTC handshake...';
 
-  // Cleanup old connection if any
+  // Reset state
+  queuedPhoneCandidates = [];
+  isRemoteDescriptionSet = false;
+  processedCandidateKeys.clear();
+
   if (peerConnection) {
+    logEvent('WARN', 'WEBRTC', 'Closing existing PeerConnection instance');
     peerConnection.close();
     peerConnection = null;
   }
 
-  // A. Create RTCPeerConnection with Dual ICE
+  // A. Create RTCPeerConnection with Dual-ICE
   peerConnection = new RTCPeerConnection(RTC_CONFIG);
+  logEvent('INFO', 'WEBRTC', 'RTCPeerConnection instantiated with STUN + TURNS servers.');
 
-  // B. Setup DataChannel for Touch & Keyboard
-  dataChannel = peerConnection.createDataChannel('control', {
-    ordered: true
-  });
+  // B. Add Unified Plan Transceiver for Video (CRITICAL: Guarantees video m-line in SDP offer)
+  peerConnection.addTransceiver('video', { direction: 'recvonly' });
+  logEvent('INFO', 'WEBRTC', 'Video transceiver added (direction: recvonly).');
+
+  // C. Setup DataChannel for Touch & Keyboard
+  dataChannel = peerConnection.createDataChannel('control', { ordered: true });
   setupDataChannel(dataChannel);
+  logEvent('INFO', 'DATA_CHANNEL', 'Local DataChannel created with label "control".');
 
-  // C. Video Stream Receiver
+  // D. Video Track Receiver Callback
   peerConnection.ontrack = (event) => {
-    console.log('[RemoteDroid] Video stream received from Samsung M52!');
-    if (event.streams && event.streams[0]) {
-      remoteVideo.srcObject = event.streams[0];
-      placeholderOverlay.style.display = 'none';
-      updateStatus('connected', 'Live - Samsung M52 5G');
-      startMetricsMonitor();
-    }
+    logEvent('SUCCESS', 'WEBRTC', `Remote track received! Kind: ${event.track.kind}, ID: ${event.track.id}, readyState: ${event.track.readyState}`);
+    
+    // Fallback support for Unified Plan (if streams[0] is absent)
+    let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+    remoteVideo.srcObject = stream;
+    placeholderOverlay.style.display = 'none';
+    updateStatus('connected', 'Live - Samsung M52 5G');
+    startMetricsMonitor();
+
+    remoteVideo.play().then(() => {
+      logEvent('SUCCESS', 'VIDEO', 'Remote video stream is actively playing.');
+    }).catch((err) => {
+      logEvent('WARN', 'VIDEO', `Autoplay blocked by browser policy: ${err.message}. Click anywhere on player.`);
+    });
   };
 
-  // D. ICE Candidate Handling
+  // E. Local ICE Candidate Handling
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log('[RemoteDroid] Local ICE Candidate generated:', event.candidate.type);
+      logEvent('DEBUG', 'ICE', `Local ICE Candidate generated: ${event.candidate.type || 'unknown'} (${event.candidate.candidate.substring(0, 45)}...)`);
       const candidatesRef = ref(db, `rooms/${roomId}/candidates/browser`);
-      push(candidatesRef, JSON.stringify(event.candidate));
+      push(candidatesRef, JSON.stringify(event.candidate)).catch((err) => {
+        logEvent('ERROR', 'FIREBASE', `Failed to push local ICE candidate: ${err.message}`);
+      });
+    } else {
+      logEvent('INFO', 'ICE', 'Local ICE Candidate gathering complete (null candidate received).');
     }
   };
 
-  // E. ICE Connection State Monitoring (Detects STUN vs TURNS auto-switch)
+  // F. ICE Connection State Monitoring
   peerConnection.oniceconnectionstatechange = () => {
-    console.log('[RemoteDroid] ICE Connection State:', peerConnection.iceConnectionState);
-    if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+    const state = peerConnection.iceConnectionState;
+    logEvent('INFO', 'ICE', `ICE Connection State -> ${state}`);
+
+    if (state === 'connected' || state === 'completed') {
+      logEvent('SUCCESS', 'ICE', 'WebRTC ICE Connection ESTABLISHED successfully!');
       inspectActiveConnection();
-    } else if (peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
+    } else if (state === 'failed' || state === 'disconnected') {
+      logEvent('ERROR', 'ICE', `ICE Connection broken (${state}). Check phone network and standby status.`);
       updateStatus('offline', 'Disconnected');
       placeholderOverlay.style.display = 'flex';
       placeholderMsg.innerText = 'Connection lost. Reconnecting...';
     }
   };
 
-  // F. Create SDP Offer
-  try {
-    const offer = await peerConnection.createOffer({
-      offerToReceiveVideo: true,
-      offerToReceiveAudio: false
-    });
-    await peerConnection.setLocalDescription(offer);
+  // G. PeerConnection State Monitoring
+  peerConnection.onconnectionstatechange = () => {
+    logEvent('INFO', 'WEBRTC', `Connection State -> ${peerConnection.connectionState}`);
+  };
 
-    // Clean old session data before starting fresh handshake
+  // H. Create & Publish SDP Offer
+  try {
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    logEvent('INFO', 'SDP', `Local SDP Offer created and set (length: ${offer.sdp.length}).`);
+
+    // Clean only old session signaling data (PRESERVE telemetry history!)
     await remove(ref(db, `rooms/${roomId}/candidates`));
     await remove(ref(db, `rooms/${roomId}/answer`));
 
-    // G. Push Offer to Firebase Realtime Database
-    const roomRef = ref(db, `rooms/${roomId}`);
-    await set(roomRef, {
-      offer: {
-        type: offer.type,
-        sdp: offer.sdp,
-        pin: secretPin,
-        timestamp: Date.now()
-      },
-      wakeup: Date.now() // Signals phone to wake up screen!
+    // Targeted writes
+    await set(ref(db, `rooms/${roomId}/offer`), {
+      type: offer.type,
+      sdp: offer.sdp,
+      pin: secretPin,
+      timestamp: Date.now()
     });
 
-    console.log('[RemoteDroid] Offer published to Firebase. Waiting for Phone answer...');
+    await set(ref(db, `rooms/${roomId}/wakeup`), Date.now());
+    logEvent('SUCCESS', 'SIGNALING', 'Offer & Wakeup trigger published to Firebase. Waiting for Phone answer...');
 
-    // H. Listen for Phone's Answer in Firebase
+    // I. Listen for Phone Answer
     const answerRef = ref(db, `rooms/${roomId}/answer`);
     onValue(answerRef, async (snapshot) => {
       const data = snapshot.val();
       if (data && !peerConnection.currentRemoteDescription) {
-        console.log('[RemoteDroid] Answer received from phone!');
-        const remoteDesc = new RTCSessionDescription(data);
-        await peerConnection.setRemoteDescription(remoteDesc);
+        logEvent('SUCCESS', 'SIGNALING', `Phone Answer received! (sdp length: ${data.sdp ? data.sdp.length : 0})`);
+        try {
+          const remoteDesc = new RTCSessionDescription(data);
+          await peerConnection.setRemoteDescription(remoteDesc);
+          isRemoteDescriptionSet = true;
+          logEvent('SUCCESS', 'SDP', 'Remote description set successfully!');
+
+          // Drain queued phone candidates
+          if (queuedPhoneCandidates.length > 0) {
+            logEvent('INFO', 'ICE', `Draining ${queuedPhoneCandidates.length} queued phone ICE candidates...`);
+            for (const cand of queuedPhoneCandidates) {
+              await addIceCandidateSafely(cand);
+            }
+            queuedPhoneCandidates = [];
+          }
+        } catch (e) {
+          logEvent('ERROR', 'SDP', `Failed to set remote description: ${e.message}`);
+        }
       }
     });
 
-    // I. Listen for Phone's ICE Candidates in Firebase
+    // J. Listen for Phone ICE Candidates
     const phoneCandidatesRef = ref(db, `rooms/${roomId}/candidates/phone`);
-    onValue(phoneCandidatesRef, (snapshot) => {
+    onValue(phoneCandidatesRef, async (snapshot) => {
+      if (!snapshot.exists()) return;
+
       snapshot.forEach((child) => {
+        const key = child.key;
+        if (processedCandidateKeys.has(key)) return;
+        processedCandidateKeys.add(key);
+
         const candidateData = child.val();
         try {
           const candidateObj = typeof candidateData === 'string' ? JSON.parse(candidateData) : candidateData;
           if (candidateObj && candidateObj.candidate) {
-            const candidate = new RTCIceCandidate(candidateObj);
-            peerConnection.addIceCandidate(candidate);
+            if (!isRemoteDescriptionSet) {
+              logEvent('DEBUG', 'ICE', `Queuing Phone candidate [${key}] (waiting for answer description)...`);
+              queuedPhoneCandidates.push(candidateObj);
+            } else {
+              addIceCandidateSafely(candidateObj);
+            }
           }
         } catch (e) {
-          console.warn('ICE add candidate error:', e);
+          logEvent('WARN', 'ICE', `Error parsing phone candidate [${key}]: ${e.message}`);
         }
       });
     });
 
   } catch (err) {
-    console.error('[RemoteDroid] Connection handshake failed:', err);
+    logEvent('ERROR', 'HANDSHAKE', `Connection handshake failed: ${err.message}`);
     updateStatus('offline', 'Handshake Error');
     placeholderMsg.innerText = 'Handshake failed: ' + err.message;
   }
 }
 
-// 3. Setup DataChannel
+async function addIceCandidateSafely(candidateObj) {
+  if (!peerConnection) return;
+  try {
+    const candidate = new RTCIceCandidate(candidateObj);
+    await peerConnection.addIceCandidate(candidate);
+    logEvent('DEBUG', 'ICE', `Added Phone candidate: ${candidate.sdpMid} (${candidate.candidate.substring(0, 35)}...)`);
+  } catch (e) {
+    logEvent('WARN', 'ICE', `Failed to add ICE candidate: ${e.message}`);
+  }
+}
+
+// ==========================================
+// 3. DATA CHANNEL & CONTROL ENGINE
+// ==========================================
 function setupDataChannel(channel) {
   channel.onopen = () => {
-    console.log('[RemoteDroid] DataChannel Open! Ready for touch/keyboard inputs.');
-    // Start Ping-Pong for real-time latency calculation
+    logEvent('SUCCESS', 'DATA_CHANNEL', 'DataChannel is OPEN! Ready for touch, keyboard, and gestures.');
+    
+    // Heartbeat & RTT Latency Monitor
     setInterval(() => {
       if (channel.readyState === 'open') {
         channel.send(JSON.stringify({ type: 'ping', t: Date.now() }));
@@ -224,40 +426,42 @@ function setupDataChannel(channel) {
         const rtt = Date.now() - msg.t;
         latencyStat.innerText = `${rtt} ms`;
       }
-    } catch (e) {
-      // Non-json message
-    }
+    } catch (e) {}
   };
 
   channel.onclose = () => {
-    console.log('[RemoteDroid] DataChannel closed.');
+    logEvent('WARN', 'DATA_CHANNEL', 'DataChannel closed.');
+  };
+
+  channel.onerror = (err) => {
+    logEvent('ERROR', 'DATA_CHANNEL', `DataChannel error: ${err.message || 'unknown'}`);
   };
 }
 
-// 4. Send Control Packets
 function sendControlPacket(payload) {
   if (dataChannel && dataChannel.readyState === 'open') {
     dataChannel.send(JSON.stringify(payload));
   } else {
-    console.warn('[RemoteDroid] DataChannel not ready, packet dropped:', payload.type);
+    logEvent('WARN', 'CONTROL', `DataChannel not open. Packet dropped: ${payload.type}`);
   }
 }
 
-// 5. Wake Phone Screen Remotely (via Firebase trigger)
+// Wake Phone Screen Remotely
 async function triggerRemoteWakeUp() {
-  console.log('[RemoteDroid] Sending physical wake-up trigger to Phone...');
+  logEvent('INFO', 'WAKE', 'Sending remote physical screen wake-up trigger...');
   btnWakeUp.innerText = '⚡ Waking...';
   try {
     const wakeupRef = ref(db, `rooms/${roomId}/wakeup`);
     await set(wakeupRef, Date.now());
+    logEvent('SUCCESS', 'WAKE', 'Wake-up timestamp pushed to Firebase.');
     setTimeout(() => { btnWakeUp.innerText = '💡 Wake Phone'; }, 1500);
   } catch (e) {
-    console.error('Failed to trigger wakeup:', e);
+    logEvent('ERROR', 'WAKE', `Failed to trigger wakeup: ${e.message}`);
     btnWakeUp.innerText = '💡 Wake Phone';
   }
 }
 
-// 6. Inspect Active Connection Type (STUN P2P vs TURNS Port 443)
+// Active Route Inspection (STUN Direct P2P vs TURNS Port 443)
 async function inspectActiveConnection() {
   if (!peerConnection) return;
   const stats = await peerConnection.getStats();
@@ -270,11 +474,13 @@ async function inspectActiveConnection() {
             routeBadge.innerText = 'TURNS (TLS 443)';
             routeBadge.style.color = '#ffb300';
             routeDesc.innerText = 'Corporate Firewall Bypass Active (Port 443 Encrypted Tunnel)';
+            logEvent('SUCCESS', 'ROUTE', 'Active Route: TURNS Relay via Port 443 (Corporate Firewall Bypassed)');
           } else {
             iceMode.innerText = 'STUN (P2P)';
             routeBadge.innerText = 'STUN (Direct P2P)';
             routeBadge.style.color = '#00e676';
             routeDesc.innerText = 'Direct High-Speed P2P (Lowest possible latency, zero relay)';
+            logEvent('SUCCESS', 'ROUTE', 'Active Route: Direct P2P via Google STUN (Zero-Relay Direct Stream)');
           }
         }
       });
@@ -282,7 +488,7 @@ async function inspectActiveConnection() {
   });
 }
 
-// 7. Live Performance Metrics (FPS & Bitrate Monitor)
+// Live Performance Metrics (FPS & Bitrate Monitor)
 function startMetricsMonitor() {
   if (statsInterval) clearInterval(statsInterval);
   statsInterval = setInterval(async () => {
@@ -307,7 +513,9 @@ function startMetricsMonitor() {
   }, 1000);
 }
 
-// 8. Virtual Touch & Mouse Coordinate Mapper (Zero-Lag Gestures)
+// ==========================================
+// 4. VIRTUAL TOUCH & MOUSE GESTURES
+// ==========================================
 function getNormalizedCoordinates(e) {
   const rect = remoteVideo.getBoundingClientRect();
   const clientX = e.clientX || (e.touches && e.touches[0].clientX);
@@ -319,13 +527,11 @@ function getNormalizedCoordinates(e) {
   return { x: parseFloat(x.toFixed(4)), y: parseFloat(y.toFixed(4)), rawX: clientX - rect.left, rawY: clientY - rect.top };
 }
 
-// Mouse Event Listeners on Phone Screen
 videoContainer.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return; // Only left click
+  if (e.button !== 0) return;
   isMouseDown = true;
   const coords = getNormalizedCoordinates(e);
 
-  // Show visual pointer
   touchPointer.style.left = `${coords.rawX}px`;
   touchPointer.style.top = `${coords.rawY}px`;
   touchPointer.classList.add('active');
@@ -364,13 +570,14 @@ window.addEventListener('mouseup', (e) => {
   });
 });
 
-// Right click = Android Back button
+// Right click = Android Back
 videoContainer.addEventListener('contextmenu', (e) => {
   e.preventDefault();
+  logEvent('INFO', 'CONTROL', 'Right click -> Android BACK');
   sendControlPacket({ type: 'key_action', action: 'BACK' });
 });
 
-// Mouse wheel = Scroll up/down gesture
+// Mouse wheel = Scroll
 videoContainer.addEventListener('wheel', (e) => {
   e.preventDefault();
   const coords = getNormalizedCoordinates(e);
@@ -383,9 +590,8 @@ videoContainer.addEventListener('wheel', (e) => {
   });
 }, { passive: false });
 
-// 9. Keyboard Typing Listener (Types into phone)
+// Keyboard Typing
 window.addEventListener('keydown', (e) => {
-  // If typing inside an input field in the web UI, don't capture
   if (e.target.tagName === 'INPUT') return;
 
   if (e.key === 'Backspace') {
@@ -395,19 +601,39 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     sendControlPacket({ type: 'key_action', action: 'ENTER' });
   } else if (e.key.length === 1) {
-    // Normal single letter/digit typing
     sendControlPacket({ type: 'text_input', text: e.key });
   }
 });
 
-// 10. Navigation Buttons
-btnBack.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'BACK' }));
-btnHome.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'HOME' }));
-btnRecents.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'RECENTS' }));
-btnNotifications.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'NOTIFICATIONS' }));
-btnVolUp.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'VOLUME_UP' }));
-btnVolDown.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'VOLUME_DOWN' }));
-btnLockScreen.addEventListener('click', () => sendControlPacket({ type: 'key_action', action: 'LOCK' }));
+// Navigation Hardware Buttons
+btnBack.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Nav BACK clicked');
+  sendControlPacket({ type: 'key_action', action: 'BACK' });
+});
+btnHome.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Nav HOME clicked');
+  sendControlPacket({ type: 'key_action', action: 'HOME' });
+});
+btnRecents.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Nav RECENTS clicked');
+  sendControlPacket({ type: 'key_action', action: 'RECENTS' });
+});
+btnNotifications.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Action NOTIFICATIONS clicked');
+  sendControlPacket({ type: 'key_action', action: 'NOTIFICATIONS' });
+});
+btnVolUp.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Volume UP clicked');
+  sendControlPacket({ type: 'key_action', action: 'VOLUME_UP' });
+});
+btnVolDown.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Volume DOWN clicked');
+  sendControlPacket({ type: 'key_action', action: 'VOLUME_DOWN' });
+});
+btnLockScreen.addEventListener('click', () => {
+  logEvent('INFO', 'BUTTON', 'Lock Screen clicked');
+  sendControlPacket({ type: 'key_action', action: 'LOCK' });
+});
 
 // Fullscreen
 btnFullscreen.addEventListener('click', () => {
@@ -418,20 +644,35 @@ btnFullscreen.addEventListener('click', () => {
   }
 });
 
-// Direct Text Injection (Clipboard/Long text)
+// Direct Text Injection
 btnSendText.addEventListener('click', () => {
   const text = directTextInput.value.trim();
   if (text) {
+    logEvent('INFO', 'INPUT', `Injecting text: "${text}"`);
     sendControlPacket({ type: 'text_input', text: text });
     directTextInput.value = '';
   }
 });
 
-// Wake Phone
+// Wake & Connect
 btnWakeUp.addEventListener('click', triggerRemoteWakeUp);
 btnConnectNow.addEventListener('click', startConnection);
 
-// Helper Status Updater
+// Video Element Diagnostics
+remoteVideo.addEventListener('loadedmetadata', () => {
+  logEvent('INFO', 'VIDEO', `Video metadata loaded: ${remoteVideo.videoWidth}x${remoteVideo.videoHeight}`);
+});
+remoteVideo.addEventListener('playing', () => {
+  logEvent('SUCCESS', 'VIDEO', `Video playback rendered: ${remoteVideo.videoWidth}x${remoteVideo.videoHeight}`);
+});
+remoteVideo.addEventListener('waiting', () => {
+  logEvent('WARN', 'VIDEO', 'Video waiting for frames / buffering...');
+});
+remoteVideo.addEventListener('error', (e) => {
+  logEvent('ERROR', 'VIDEO', `Video element error: ${remoteVideo.error?.message || 'unknown error'}`);
+});
+
+// Status Indicator Helper
 function updateStatus(state, text) {
   connectionStatus.innerText = text;
   if (state === 'connected') {
@@ -478,4 +719,4 @@ btnSaveConfig.addEventListener('click', () => {
 
 // Init on Page Load
 initFirebase();
-console.log('[RemoteDroid] Web Client loaded successfully.');
+logEvent('INFO', 'SYSTEM', 'FLEX Web Controller Engine Ready. Room: ' + roomId);

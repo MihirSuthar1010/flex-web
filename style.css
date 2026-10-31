@@ -551,3 +551,94 @@ body {
   gap: 10px;
   margin-top: 20px;
 }
+
+
+/* Telemetry Drawer (SLTL Industrial Standard) */
+.telemetry-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #090c12;
+  border-top: 1px solid var(--border-color);
+  z-index: 50;
+  transition: all 0.25s ease;
+  max-height: 38px;
+  display: flex;
+  flex-direction: column;
+}
+
+.telemetry-drawer.expanded {
+  max-height: 260px;
+}
+
+.drawer-header {
+  height: 38px;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.drawer-badge {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.drawer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  background: var(--bg-tertiary);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-xs:hover {
+  background: #252e42;
+  border-color: var(--accent-cyan);
+}
+
+.drawer-content {
+  flex: 1;
+  background: #05070a;
+  padding: 10px 16px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-entry {
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.log-entry.info { color: #8a99ad; }
+.log-entry.success { color: #00e676; }
+.log-entry.warn { color: #ffb300; }
+.log-entry.error { color: #ff3366; }

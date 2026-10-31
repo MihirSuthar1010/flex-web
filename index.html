@@ -199,6 +199,25 @@
     </div>
   </div>
 
+  <!-- Live Telemetry & Industrial Diagnostics Drawer (SLTL Industrial Standard) -->
+  <div class="telemetry-drawer" id="telemetryDrawer">
+    <div class="drawer-header" id="drawerHeader">
+      <div class="drawer-title">
+        <span>⚡ ENGINE TELEMETRY &amp; LOGS</span>
+        <span class="drawer-badge" id="logCounter">0 events</span>
+      </div>
+      <div class="drawer-actions">
+        <button class="btn-xs" id="btnDownloadWebLog" title="Download Web Console Log">📥 Web Log</button>
+        <button class="btn-xs" id="btnDownloadPhoneLog" title="Download Phone System Log from Firebase">📱 Phone Log</button>
+        <button class="btn-xs" id="btnClearLogs" title="Clear Console">🧹 Clear</button>
+        <button class="btn-xs" id="btnToggleDrawer" title="Expand / Minimize">▲ Expand</button>
+      </div>
+    </div>
+    <div class="drawer-content" id="drawerContent">
+      <div class="log-entry info">[SYSTEM] Telemetry engine ready. Click 'Connect to Phone' to begin trace.</div>
+    </div>
+  </div>
+
   <script type="module" src="./app.js"></script>
 </body>
 </html>
