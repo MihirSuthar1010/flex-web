@@ -28,11 +28,14 @@ let dataChannel = null;
 let roomId = localStorage.getItem('rd_room_id') || 'm52-mihir-secure';
 let secretPin = localStorage.getItem('rd_pin') || '1234';
 let customDbUrl = localStorage.getItem('rd_db_url') || DEFAULT_FIREBASE_CONFIG.databaseURL;
+let customLanIp = localStorage.getItem('rd_lan_ip') || '';
+let customTurnKey = localStorage.getItem('rd_turn_key') || '';
 
 let isMouseDown = false;
 let statsInterval = null;
 let lastBytesReceived = 0;
 let lastStatsTime = 0;
+let checkingStartTime = 0;
 
 // ICE Candidate Queueing State
 let queuedPhoneCandidates = [];
@@ -81,6 +84,8 @@ const btnSaveConfig = document.getElementById('btnSaveConfig');
 const inputRoomId = document.getElementById('inputRoomId');
 const inputPin = document.getElementById('inputPin');
 const inputFirebaseUrl = document.getElementById('inputFirebaseUrl');
+const inputLanIp = document.getElementById('inputLanIp');
+const inputTurnKey = document.getElementById('inputTurnKey');
 
 // Telemetry Drawer Elements
 const telemetryDrawer = document.getElementById('telemetryDrawer');
@@ -91,6 +96,13 @@ const btnDownloadWebLog = document.getElementById('btnDownloadWebLog');
 const btnDownloadPhoneLog = document.getElementById('btnDownloadPhoneLog');
 const btnClearLogs = document.getElementById('btnClearLogs');
 const btnToggleDrawer = document.getElementById('btnToggleDrawer');
+
+// Diagnostics HUD Elements
+const diagIceState = document.getElementById('diagIceState');
+const diagActivePair = document.getElementById('diagActivePair');
+const diagFrames = document.getElementById('diagFrames');
+const diagBytes = document.getElementById('diagBytes');
+const diagAutoAlert = document.getElementById('diagAutoAlert');
 
 // ==========================================
 // 1. INDUSTRIAL LOG ENGINE (Dual-Sink Telemetry)
@@ -226,15 +238,56 @@ function initFirebase() {
   }
 }
 
+async function getEffectiveIceServers() {
+  let servers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ];
+
+  if (customTurnKey) {
+    try {
+      if (customTurnKey.startsWith('http')) {
+        logEvent('INFO', 'TURN', 'Fetching dynamic TURN credentials from Metered API...');
+        const res = await fetch(customTurnKey);
+        if (res.ok) {
+          const fetchedServers = await res.json();
+          if (Array.isArray(fetchedServers) && fetchedServers.length > 0) {
+            servers = fetchedServers;
+            logEvent('SUCCESS', 'TURN', `Acquired ${fetchedServers.length} cloud relay endpoints from Metered.`);
+            // Sync with Firebase so Android App automatically uses the same TURN relay
+            if (db) {
+              set(ref(db, `rooms/${roomId}/turn_config`), fetchedServers).catch(() => {});
+            }
+          }
+        }
+      } else {
+        try {
+          const parsed = JSON.parse(customTurnKey);
+          if (Array.isArray(parsed)) servers = parsed;
+        } catch(e) {}
+      }
+    } catch (e) {
+      logEvent('WARN', 'TURN', `Failed to load dynamic TURN servers: ${e.message}`);
+    }
+  }
+
+  return servers;
+}
+
 async function startConnection() {
   logEvent('INFO', 'INIT', '=== Starting WebRTC Connection Handshake ===');
   updateStatus('connecting', 'Negotiating Handshake...');
   placeholderMsg.innerText = 'Sending wake-up signal & negotiating WebRTC handshake...';
+  if (diagAutoAlert) diagAutoAlert.style.display = 'none';
 
   // Reset state
   queuedPhoneCandidates = [];
   isRemoteDescriptionSet = false;
   processedCandidateKeys.clear();
+  checkingStartTime = 0;
 
   if (peerConnection) {
     logEvent('WARN', 'WEBRTC', 'Closing existing PeerConnection instance');
@@ -242,9 +295,13 @@ async function startConnection() {
     peerConnection = null;
   }
 
-  // A. Create RTCPeerConnection with Dual-ICE
-  peerConnection = new RTCPeerConnection(RTC_CONFIG);
-  logEvent('INFO', 'WEBRTC', 'RTCPeerConnection instantiated with STUN + TURNS servers.');
+  // A. Create RTCPeerConnection with Dynamic STUN/TURN
+  const activeIceServers = await getEffectiveIceServers();
+  peerConnection = new RTCPeerConnection({
+    iceServers: activeIceServers,
+    iceCandidatePoolSize: 10
+  });
+  logEvent('INFO', 'WEBRTC', `RTCPeerConnection instantiated (${activeIceServers.length} ICE server configs).`);
 
   // B. Add Unified Plan Transceiver for Video (CRITICAL: Guarantees video m-line in SDP offer)
   peerConnection.addTransceiver('video', { direction: 'recvonly' });
@@ -263,22 +320,35 @@ async function startConnection() {
     let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
     remoteVideo.srcObject = stream;
     placeholderOverlay.style.display = 'none';
+    if (diagAutoAlert) diagAutoAlert.style.display = 'none';
     updateStatus('connected', 'Live - Samsung M52 5G');
     startMetricsMonitor();
 
     remoteVideo.play().then(() => {
-      logEvent('SUCCESS', 'VIDEO', 'Remote video stream is actively playing.');
+      logEvent('SUCCESS', 'VIDEO', `Remote video playing (${remoteVideo.videoWidth || 'buffer'}x${remoteVideo.videoHeight || 'buffer'}).`);
     }).catch((err) => {
       logEvent('WARN', 'VIDEO', `Autoplay blocked by browser policy: ${err.message}. Click anywhere on player.`);
     });
   };
 
-  // E. Local ICE Candidate Handling
+  // E. Local ICE Candidate Handling (mDNS Unmasking for Local LAN P2P)
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      logEvent('DEBUG', 'ICE', `Local ICE Candidate generated: ${event.candidate.type || 'unknown'} (${event.candidate.candidate.substring(0, 45)}...)`);
+      let candStr = event.candidate.candidate;
+      if (customLanIp && candStr.includes('.local')) {
+        candStr = candStr.replace(/[a-f0-9\-]+\.local/g, customLanIp);
+        logEvent('INFO', 'LAN', `[mDNS UNMASK] Injected PC LAN IP ${customLanIp} into host candidate.`);
+      }
+
+      const candidatePayload = {
+        candidate: candStr,
+        sdpMid: event.candidate.sdpMid,
+        sdpMLineIndex: event.candidate.sdpMLineIndex
+      };
+
+      logEvent('DEBUG', 'ICE', `Local ICE Candidate: ${candidatePayload.sdpMid} -> ${candStr.substring(0, 45)}...`);
       const candidatesRef = ref(db, `rooms/${roomId}/candidates/browser`);
-      push(candidatesRef, JSON.stringify(event.candidate)).catch((err) => {
+      push(candidatesRef, JSON.stringify(candidatePayload)).catch((err) => {
         logEvent('ERROR', 'FIREBASE', `Failed to push local ICE candidate: ${err.message}`);
       });
     } else {
@@ -290,15 +360,24 @@ async function startConnection() {
   peerConnection.oniceconnectionstatechange = () => {
     const state = peerConnection.iceConnectionState;
     logEvent('INFO', 'ICE', `ICE Connection State -> ${state}`);
+    if (diagIceState) diagIceState.innerText = state;
 
-    if (state === 'connected' || state === 'completed') {
+    if (state === 'checking') {
+      checkingStartTime = Date.now();
+    } else if (state === 'connected' || state === 'completed') {
       logEvent('SUCCESS', 'ICE', 'WebRTC ICE Connection ESTABLISHED successfully!');
+      if (diagAutoAlert) diagAutoAlert.style.display = 'none';
       inspectActiveConnection();
     } else if (state === 'failed' || state === 'disconnected') {
       logEvent('ERROR', 'ICE', `ICE Connection broken (${state}). Check phone network and standby status.`);
       updateStatus('offline', 'Disconnected');
       placeholderOverlay.style.display = 'flex';
       placeholderMsg.innerText = 'Connection lost. Reconnecting...';
+
+      if (diagAutoAlert) {
+        diagAutoAlert.innerHTML = `⚠️ <strong>[INDUSTRIAL ROOT CAUSE IDENTIFIED]</strong>: Carrier CGNAT dropped direct UDP packets. <strong>Fix:</strong> 1) Put Phone on same Wi-Fi as PC & enter LAN IP in Config (60 FPS direct LAN), OR 2) Enter Metered TURN credentials in Config for 5G locker access.`;
+        diagAutoAlert.style.display = 'block';
+      }
     }
   };
 
@@ -495,7 +574,7 @@ function startMetricsMonitor() {
     stats.forEach(report => {
       if (report.type === 'inbound-rtp' && report.kind === 'video') {
         const now = report.timestamp;
-        const bytes = report.bytesReceived;
+        const bytes = report.bytesReceived || 0;
         if (lastStatsTime > 0) {
           const bitrate = Math.round((8 * (bytes - lastBytesReceived)) / (now - lastStatsTime));
           bitrateStat.innerText = `${bitrate} Kbps`;
@@ -503,11 +582,28 @@ function startMetricsMonitor() {
         lastBytesReceived = bytes;
         lastStatsTime = now;
 
+        if (diagBytes) diagBytes.innerText = `${Math.round(bytes / 1024)} KB`;
+        if (report.framesDecoded !== undefined && diagFrames) {
+          diagFrames.innerText = report.framesDecoded;
+        }
+
         if (report.framesPerSecond !== undefined) {
           fpsStat.innerText = `${report.framesPerSecond} FPS`;
         }
       }
+
+      if (report.type === 'candidate-pair' && report.state === 'succeeded' && diagActivePair) {
+        diagActivePair.innerText = `${report.localCandidateId || 'local'} ⇄ ${report.remoteCandidateId || 'remote'}`;
+      }
     });
+
+    // Root-Cause Checker: If checking for > 7 seconds and 0 bytes received
+    if (peerConnection.iceConnectionState === 'checking' && checkingStartTime > 0 && (Date.now() - checkingStartTime > 7000)) {
+      if (diagAutoAlert) {
+        diagAutoAlert.innerHTML = `⚠️ <strong>[INDUSTRIAL ROOT CAUSE]</strong>: STUN packet drops detected! Phone is on Carrier CGNAT (Jio 5G). <strong>Direct UDP is blocked by carrier.</strong><br>👉 <strong>Instant Solution:</strong> 1) Put Phone on same Wi-Fi as PC & enter LAN IP in Config (60 FPS direct LAN), OR 2) Enter Metered TURN credentials in Config for 5G locker access.`;
+        diagAutoAlert.style.display = 'block';
+      }
+    }
   }, 1000);
 }
 
@@ -693,6 +789,8 @@ btnSettings.addEventListener('click', () => {
   inputRoomId.value = roomId;
   inputPin.value = secretPin;
   inputFirebaseUrl.value = customDbUrl;
+  if (inputLanIp) inputLanIp.value = customLanIp;
+  if (inputTurnKey) inputTurnKey.value = customTurnKey;
   configModal.classList.add('open');
 });
 
@@ -704,6 +802,14 @@ btnSaveConfig.addEventListener('click', () => {
   secretPin = inputPin.value.trim() || '1234';
   if (inputFirebaseUrl.value.trim()) {
     customDbUrl = inputFirebaseUrl.value.trim();
+  }
+  if (inputLanIp) {
+    customLanIp = inputLanIp.value.trim();
+    localStorage.setItem('rd_lan_ip', customLanIp);
+  }
+  if (inputTurnKey) {
+    customTurnKey = inputTurnKey.value.trim();
+    localStorage.setItem('rd_turn_key', customTurnKey);
   }
 
   localStorage.setItem('rd_room_id', roomId);

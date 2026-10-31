@@ -191,6 +191,21 @@
           <label>Firebase Database URL (Optional - Default Preset Active)</label>
           <input type="text" id="inputFirebaseUrl" placeholder="https://your-project-default-rtdb.firebaseio.com" />
         </div>
+
+        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
+        <h4 style="color: #00e5ff; margin-bottom: 8px; font-size: 13px; text-transform: uppercase;">🚀 Network &amp; NAT Traversal Modes</h4>
+
+        <div class="form-group">
+          <label>Mode 1: LAN Direct P2P (Same Wi-Fi / Hotspot)</label>
+          <p style="font-size: 11px; color: #888; margin-top: 2px; margin-bottom: 6px;">Unmasks Chromium mDNS (.local) so Phone connects directly over local router at 60 FPS.</p>
+          <input type="text" id="inputLanIp" placeholder="e.g. 10.89.19.63 or 192.168.1.15" />
+        </div>
+
+        <div class="form-group">
+          <label>Mode 2: Cloud TURN Relay (Locker / 5G Mobile Data)</label>
+          <p style="font-size: 11px; color: #888; margin-top: 2px; margin-bottom: 6px;">Metered API Key (Free 50GB/mo at dashboard.metered.ca) or TURN URL string.</p>
+          <input type="text" id="inputTurnKey" placeholder="e.g. https://your-app.metered.live/api/v1/turn/credentials?apiKey=..." />
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btnCancelConfig">Cancel</button>
@@ -212,6 +227,13 @@
         <button class="btn-xs" id="btnClearLogs" title="Clear Console">🧹 Clear</button>
         <button class="btn-xs" id="btnToggleDrawer" title="Expand / Minimize">▲ Expand</button>
       </div>
+    </div>
+    <div class="drawer-diag-bar" id="drawerDiagBar" style="background: rgba(0,0,0,0.4); padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; flex-wrap: wrap; gap: 15px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a0aec0;">
+      <div><span style="color: #64748b;">ICE:</span> <span id="diagIceState" style="color: #38bdf8;">idle</span></div>
+      <div><span style="color: #64748b;">PAIR:</span> <span id="diagActivePair" style="color: #cbd5e1;">none</span></div>
+      <div><span style="color: #64748b;">FRAMES:</span> <span id="diagFrames" style="color: #4ade80;">0</span></div>
+      <div><span style="color: #64748b;">BYTES RECV:</span> <span id="diagBytes" style="color: #a855f7;">0 KB</span></div>
+      <div id="diagAutoAlert" style="display: none; width: 100%; padding: 4px 8px; border-radius: 4px; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5;"></div>
     </div>
     <div class="drawer-content" id="drawerContent">
       <div class="log-entry info">[SYSTEM] Telemetry engine ready. Click 'Connect to Phone' to begin trace.</div>
