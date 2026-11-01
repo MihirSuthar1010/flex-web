@@ -562,15 +562,52 @@ body {
   background: #090c12;
   border-top: 1px solid var(--border-color);
   z-index: 100;
-  transition: all 0.25s ease;
+  transition: height 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   height: 38px;
+  min-height: 38px;
+  max-height: calc(100vh - 56px);
   display: flex;
   flex-direction: column;
 }
 
-.telemetry-drawer.expanded {
-  height: 380px;
-  max-height: 55vh;
+.telemetry-drawer.resizing {
+  transition: none !important;
+  user-select: none;
+}
+
+/* Interactive Resizer Bar on Top Edge */
+.drawer-resizer {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 12px;
+  cursor: ns-resize;
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.drawer-resizer:hover, .drawer-resizer.dragging {
+  background: rgba(0, 242, 254, 0.2);
+}
+
+.resizer-grip {
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: #2a364f;
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.drawer-resizer:hover .resizer-grip,
+.drawer-resizer.dragging .resizer-grip {
+  background: var(--accent-cyan);
+  width: 72px;
+  box-shadow: 0 0 10px var(--accent-cyan);
 }
 
 .drawer-header {
@@ -581,7 +618,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  cursor: pointer;
+  cursor: ns-resize;
   user-select: none;
 }
 

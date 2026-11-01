@@ -110,6 +110,7 @@ const inputTurnKey = document.getElementById('inputTurnKey');
 
 // Telemetry Drawer Elements
 const telemetryDrawer = document.getElementById('telemetryDrawer');
+const drawerResizer = document.getElementById('drawerResizer');
 const drawerHeader = document.getElementById('drawerHeader');
 const drawerContent = document.getElementById('drawerContent');
 const logCounter = document.getElementById('logCounter');
@@ -183,23 +184,161 @@ function downloadTextFile(filename, content) {
   URL.revokeObjectURL(url);
 }
 
-// Telemetry Drawer UI Handlers
-if (btnToggleDrawer && telemetryDrawer) {
+// ==========================================
+// TELEMETRY DRAWER RESIZER ENGINE (Desktop-Grade Smooth Drag)
+// ==========================================
+let isDrawerDragging = false;
+let drawerStartY = 0;
+let drawerStartHeight = 0;
+let drawerHasMoved = false;
+
+function expandDrawer(customHeight) {
+  if (!telemetryDrawer) return;
+  const savedHeight = parseInt(localStorage.getItem('rd_drawer_height')) || 380;
+  const target = customHeight || Math.min(Math.max(savedHeight, 200), window.innerHeight - 70);
+  telemetryDrawer.style.transition = 'height 0.22s cubic-bezier(0.16, 1, 0.3, 1)';
+  telemetryDrawer.style.height = `${target}px`;
+  telemetryDrawer.classList.add('expanded');
+  if (btnToggleDrawer) btnToggleDrawer.innerText = '▼ Collapse';
+}
+
+function collapseDrawer() {
+  if (!telemetryDrawer) return;
+  telemetryDrawer.style.transition = 'height 0.22s cubic-bezier(0.16, 1, 0.3, 1)';
+  telemetryDrawer.style.height = '38px';
+  telemetryDrawer.classList.remove('expanded');
+  if (btnToggleDrawer) btnToggleDrawer.innerText = '▲ Expand';
+}
+
+function toggleDrawer() {
+  if (!telemetryDrawer) return;
+  const currentHeight = telemetryDrawer.getBoundingClientRect().height;
+  if (currentHeight > 50 || telemetryDrawer.classList.contains('expanded')) {
+    collapseDrawer();
+  } else {
+    expandDrawer();
+  }
+}
+
+if (btnToggleDrawer) {
   btnToggleDrawer.addEventListener('click', (e) => {
     e.stopPropagation();
-    telemetryDrawer.classList.toggle('expanded');
-    btnToggleDrawer.innerText = telemetryDrawer.classList.contains('expanded') ? '▼ Collapse' : '▲ Expand';
+    toggleDrawer();
   });
 }
 
-if (drawerHeader && telemetryDrawer) {
-  drawerHeader.addEventListener('click', () => {
-    telemetryDrawer.classList.toggle('expanded');
-    if (btnToggleDrawer) {
-      btnToggleDrawer.innerText = telemetryDrawer.classList.contains('expanded') ? '▼ Collapse' : '▲ Expand';
-    }
-  });
+// Mouse Drag-To-Resize Handlers
+function initDrawerResize(e) {
+  if (e.target.closest('.drawer-actions') || e.target.closest('button')) return;
+  isDrawerDragging = true;
+  drawerHasMoved = false;
+  drawerStartY = e.clientY;
+  drawerStartHeight = telemetryDrawer.getBoundingClientRect().height;
+  telemetryDrawer.classList.add('resizing');
+  if (drawerResizer) drawerResizer.classList.add('dragging');
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'ns-resize';
+  e.preventDefault();
 }
+
+if (drawerResizer) {
+  drawerResizer.addEventListener('mousedown', initDrawerResize);
+}
+
+if (drawerHeader) {
+  drawerHeader.addEventListener('mousedown', initDrawerResize);
+}
+
+window.addEventListener('mousemove', (e) => {
+  if (!isDrawerDragging) return;
+  const deltaY = drawerStartY - e.clientY; // Upward mouse motion increases height
+  if (Math.abs(deltaY) > 3) {
+    drawerHasMoved = true;
+  }
+  let newHeight = drawerStartHeight + deltaY;
+  const minHeight = 38;
+  const maxHeight = window.innerHeight - 56;
+  newHeight = Math.max(minHeight, Math.min(newHeight, maxHeight));
+  telemetryDrawer.style.height = `${newHeight}px`;
+
+  if (newHeight > 60) {
+    telemetryDrawer.classList.add('expanded');
+    if (btnToggleDrawer) btnToggleDrawer.innerText = '▼ Collapse';
+  } else {
+    telemetryDrawer.classList.remove('expanded');
+    if (btnToggleDrawer) btnToggleDrawer.innerText = '▲ Expand';
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (!isDrawerDragging) return;
+  isDrawerDragging = false;
+  telemetryDrawer.classList.remove('resizing');
+  if (drawerResizer) drawerResizer.classList.remove('dragging');
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+
+  if (!drawerHasMoved) {
+    toggleDrawer();
+  } else {
+    const finalHeight = telemetryDrawer.getBoundingClientRect().height;
+    if (finalHeight <= 50) {
+      collapseDrawer();
+    } else {
+      localStorage.setItem('rd_drawer_height', finalHeight);
+    }
+  }
+});
+
+// Touch Device Support (Tablets / Laptops with Touchscreen)
+function initDrawerTouch(e) {
+  if (e.target.closest('.drawer-actions') || e.target.closest('button')) return;
+  if (!e.touches || e.touches.length === 0) return;
+  isDrawerDragging = true;
+  drawerHasMoved = false;
+  drawerStartY = e.touches[0].clientY;
+  drawerStartHeight = telemetryDrawer.getBoundingClientRect().height;
+  telemetryDrawer.classList.add('resizing');
+}
+
+if (drawerResizer) {
+  drawerResizer.addEventListener('touchstart', initDrawerTouch, { passive: true });
+}
+if (drawerHeader) {
+  drawerHeader.addEventListener('touchstart', initDrawerTouch, { passive: true });
+}
+
+window.addEventListener('touchmove', (e) => {
+  if (!isDrawerDragging || !e.touches || e.touches.length === 0) return;
+  const deltaY = drawerStartY - e.touches[0].clientY;
+  if (Math.abs(deltaY) > 3) drawerHasMoved = true;
+  let newHeight = drawerStartHeight + deltaY;
+  newHeight = Math.max(38, Math.min(newHeight, window.innerHeight - 56));
+  telemetryDrawer.style.height = `${newHeight}px`;
+  if (newHeight > 60) {
+    telemetryDrawer.classList.add('expanded');
+    if (btnToggleDrawer) btnToggleDrawer.innerText = '▼ Collapse';
+  } else {
+    telemetryDrawer.classList.remove('expanded');
+    if (btnToggleDrawer) btnToggleDrawer.innerText = '▲ Expand';
+  }
+}, { passive: true });
+
+window.addEventListener('touchend', () => {
+  if (!isDrawerDragging) return;
+  isDrawerDragging = false;
+  telemetryDrawer.classList.remove('resizing');
+  if (!drawerHasMoved) {
+    toggleDrawer();
+  } else {
+    const finalHeight = telemetryDrawer.getBoundingClientRect().height;
+    if (finalHeight <= 50) {
+      collapseDrawer();
+    } else {
+      localStorage.setItem('rd_drawer_height', finalHeight);
+    }
+  }
+});
 
 if (btnClearLogs && drawerContent) {
   btnClearLogs.addEventListener('click', (e) => {
