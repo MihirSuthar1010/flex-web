@@ -92,6 +92,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
             <span>Unlock</span>
           </button>
+          <button class="nav-btn" id="btnTogglePinPad" title="Toggle Lockscreen PIN Pad Grid Overlay">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>PIN Grid</span>
+          </button>
           <button class="nav-btn" id="btnLockScreen" title="Lock Device">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             <span>Lock</span>
@@ -109,6 +113,11 @@
 
       <!-- Center Phone Mirror Viewport -->
       <section class="phone-stage">
+        <!-- Floating PIN Grid Toggle Button (Exact user sketch position) -->
+        <button class="pin-grid-floating-btn" id="btnFramePinToggle" title="Toggle Lockscreen PIN Pad Grid">
+          🔢 PIN Grid
+        </button>
+
         <div class="phone-frame" id="phoneFrame">
           <!-- Standby / Loading Placeholder -->
           <div class="phone-placeholder" id="placeholderOverlay">
@@ -128,6 +137,80 @@
             <video id="remoteVideo" autoplay playsinline muted></video>
             <!-- Virtual Touch Visualizer (shows touch dot on click) -->
             <div class="touch-pointer" id="touchPointer"></div>
+
+            <!-- Virtual Lockscreen PIN Keypad HUD / Grid Overlay -->
+            <div class="pin-keypad-overlay" id="pinKeypadOverlay" style="display: none;">
+              <div class="pin-overlay-header">
+                <div class="pin-overlay-title">
+                  <span class="pin-shield-icon">🛡️</span>
+                  <span>Samsung PIN Keypad HUD</span>
+                </div>
+                <button class="pin-close-btn" id="btnClosePinOverlay" title="Hide PIN Grid">✕</button>
+              </div>
+
+              <div class="pin-overlay-actions">
+                <button class="pin-swipe-up-btn" id="btnOverlaySwipeUp" title="Swipe lockscreen up to reveal PIN pad">
+                  ⬆️ Step 1: Slide Up Lockscreen
+                </button>
+              </div>
+
+              <div class="pin-overlay-hint">Step 2: Click numbers below or type on laptop keyboard</div>
+
+              <div class="pin-pad-grid">
+                <button class="pin-key" data-digit="1" data-x="0.25" data-y="0.355">
+                  <span class="num">1</span>
+                </button>
+                <button class="pin-key" data-digit="2" data-x="0.50" data-y="0.355">
+                  <span class="num">2</span>
+                  <span class="sub">ABC</span>
+                </button>
+                <button class="pin-key" data-digit="3" data-x="0.75" data-y="0.355">
+                  <span class="num">3</span>
+                  <span class="sub">DEF</span>
+                </button>
+
+                <button class="pin-key" data-digit="4" data-x="0.25" data-y="0.465">
+                  <span class="num">4</span>
+                  <span class="sub">GHI</span>
+                </button>
+                <button class="pin-key" data-digit="5" data-x="0.50" data-y="0.465">
+                  <span class="num">5</span>
+                  <span class="sub">JKL</span>
+                </button>
+                <button class="pin-key" data-digit="6" data-x="0.75" data-y="0.465">
+                  <span class="num">6</span>
+                  <span class="sub">MNO</span>
+                </button>
+
+                <button class="pin-key" data-digit="7" data-x="0.25" data-y="0.575">
+                  <span class="num">7</span>
+                  <span class="sub">PQRS</span>
+                </button>
+                <button class="pin-key" data-digit="8" data-x="0.50" data-y="0.575">
+                  <span class="num">8</span>
+                  <span class="sub">TUV</span>
+                </button>
+                <button class="pin-key" data-digit="9" data-x="0.75" data-y="0.575">
+                  <span class="num">9</span>
+                  <span class="sub">WXYZ</span>
+                </button>
+
+                <button class="pin-key pin-special" data-digit="BACKSPACE" data-x="0.25" data-y="0.685" title="Backspace / Delete">
+                  <span class="num">⌫</span>
+                </button>
+                <button class="pin-key" data-digit="0" data-x="0.50" data-y="0.685">
+                  <span class="num">0</span>
+                  <span class="sub">+</span>
+                </button>
+                <button class="pin-key pin-special pin-ok" data-digit="ENTER" data-x="0.75" data-y="0.685" title="OK / Enter">
+                  <span class="num">OK</span>
+                </button>
+              </div>
+
+              <div class="pin-overlay-footer">
+                <span id="pinDisplayStatus">Tapping dispatches real touch coordinates</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>

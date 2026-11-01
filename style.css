@@ -703,3 +703,190 @@ body {
 .log-entry.success { color: #00e676; }
 .log-entry.warn { color: #ffb300; }
 .log-entry.error { color: #ff3366; }
+
+/* ==========================================
+   PIN Keypad HUD & Grid Overlay
+   ========================================== */
+.pin-grid-floating-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 30;
+  background: rgba(13, 20, 36, 0.9);
+  border: 1.5px solid var(--accent-cyan);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 242, 254, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.pin-grid-floating-btn:hover {
+  background: var(--accent-cyan);
+  color: #070a12;
+  box-shadow: 0 6px 20px rgba(0, 242, 254, 0.45);
+  transform: translateY(-2px);
+}
+
+.pin-keypad-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 9, 18, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 16px;
+  box-sizing: border-box;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.pin-overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: 20px;
+}
+
+.pin-overlay-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.pin-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  transition: background 0.2s;
+}
+
+.pin-close-btn:hover {
+  background: rgba(255, 51, 102, 0.4);
+}
+
+.pin-overlay-actions {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.pin-swipe-up-btn {
+  width: 100%;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.3));
+  border: 1px solid var(--accent-cyan);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pin-swipe-up-btn:hover {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.4), rgba(79, 172, 254, 0.5));
+  transform: translateY(-1px);
+}
+
+.pin-overlay-hint {
+  font-size: 0.68rem;
+  color: #8a99ad;
+  text-align: center;
+  margin: 8px 0 14px 0;
+}
+
+/* 3x4 Pin Grid */
+.pin-pad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 82%;
+  margin: 0 auto;
+  align-content: center;
+  flex: 1;
+}
+
+.pin-key {
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.pin-key:hover {
+  background: rgba(0, 242, 254, 0.2);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+  transform: scale(1.04);
+}
+
+.pin-key:active, .pin-key.active {
+  background: var(--accent-cyan);
+  color: #070a12;
+  box-shadow: 0 0 22px rgba(0, 242, 254, 0.8);
+  transform: scale(0.95);
+}
+
+.pin-key .num {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pin-key .sub {
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+}
+
+.pin-key.pin-special {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pin-key.pin-ok {
+  border-color: rgba(0, 230, 118, 0.4);
+}
+
+.pin-key.pin-ok:hover {
+  background: rgba(0, 230, 118, 0.25);
+  border-color: #00e676;
+}
+
+.pin-overlay-footer {
+  text-align: center;
+  font-size: 0.65rem;
+  color: #64748b;
+  margin-bottom: 8px;
+}

@@ -1140,6 +1140,88 @@ function updateStatus(state, text) {
   }
 }
 
+// ==========================================
+// 6. SAMSUNG PIN KEYPAD HUD & GRID OVERLAY
+// (Bypasses FLAG_SECURE Black Screen via Exact Normalized Coordinate Taps)
+// ==========================================
+const pinKeypadOverlay = document.getElementById('pinKeypadOverlay');
+const btnTogglePinPad = document.getElementById('btnTogglePinPad');
+const btnFramePinToggle = document.getElementById('btnFramePinToggle');
+const btnClosePinOverlay = document.getElementById('btnClosePinOverlay');
+const btnOverlaySwipeUp = document.getElementById('btnOverlaySwipeUp');
+const pinDisplayStatus = document.getElementById('pinDisplayStatus');
+const pinKeys = document.querySelectorAll('.pin-key');
+
+function togglePinKeypad() {
+  if (!pinKeypadOverlay) return;
+  const isShown = pinKeypadOverlay.style.display !== 'none';
+  pinKeypadOverlay.style.display = isShown ? 'none' : 'flex';
+  logEvent('INFO', 'PIN_HUD', `Samsung Lockscreen PIN HUD ${isShown ? 'Hidden' : 'Opened'}`);
+}
+
+if (btnTogglePinPad) btnTogglePinPad.addEventListener('click', togglePinKeypad);
+if (btnFramePinToggle) btnFramePinToggle.addEventListener('click', togglePinKeypad);
+if (btnClosePinOverlay) btnClosePinOverlay.addEventListener('click', () => {
+  if (pinKeypadOverlay) pinKeypadOverlay.style.display = 'none';
+});
+
+// Step 1: Slide up lockscreen to reveal the PIN keypad
+if (btnOverlaySwipeUp) {
+  btnOverlaySwipeUp.addEventListener('click', () => {
+    logEvent('INFO', 'PIN_HUD', 'Executing Lockscreen Slide Up to activate PIN pad...');
+    sendControlPacket({ type: 'key_action', action: 'UNLOCK_SWIPE' });
+    if (pinDisplayStatus) pinDisplayStatus.innerText = 'Lockscreen slid up! Enter your PIN below:';
+  });
+}
+
+// Step 2: Handle Pin Key clicks
+pinKeys.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const digit = btn.dataset.digit;
+    const x = parseFloat(btn.dataset.x);
+    const y = parseFloat(btn.dataset.y);
+
+    // Visual button press animation
+    btn.classList.add('active');
+    setTimeout(() => btn.classList.remove('active'), 120);
+
+    if (pinDisplayStatus) {
+      pinDisplayStatus.innerText = `Tapped: ${digit === 'ENTER' ? 'OK' : digit === 'BACKSPACE' ? 'Delete' : digit}`;
+    }
+
+    logEvent('INFO', 'PIN_TAP', `Physical Coordinate Tap: ${digit} at (${x}, ${y})`);
+    sendControlPacket({
+      type: 'tap',
+      x: x,
+      y: y
+    });
+  });
+});
+
+// Step 3: Keyboard listener while PIN Overlay is open
+window.addEventListener('keydown', (e) => {
+  if (!pinKeypadOverlay || pinKeypadOverlay.style.display === 'none') return;
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+
+  let targetDigit = null;
+  if (e.key >= '0' && e.key <= '9') {
+    targetDigit = e.key;
+  } else if (e.key === 'Backspace') {
+    targetDigit = 'BACKSPACE';
+  } else if (e.key === 'Enter') {
+    targetDigit = 'ENTER';
+  }
+
+  if (targetDigit) {
+    e.preventDefault();
+    const matchingBtn = document.querySelector(`.pin-key[data-digit="${targetDigit}"]`);
+    if (matchingBtn) {
+      matchingBtn.click();
+    }
+  }
+});
+
 // Config Modal Handlers
 btnSettings.addEventListener('click', () => {
   inputRoomId.value = roomId;
