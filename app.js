@@ -12,32 +12,12 @@ const DEFAULT_FIREBASE_CONFIG = {
 // WebRTC Dual-Engine: Google Public STUN + ExpressTURN (1,000 GB Primary UDP) + Metered (Backup UDP)
 // CRITICAL: PURE UDP RELAYS ONLY. TCP & TLS (turns:) removed to eliminate 300ms buffering & maintain solid 60 FPS!
 const DEFAULT_ICE_SERVERS = [
-  // Tier 1: Google Public STUN (Direct zero-relay P2P - 2ms on LAN, <20ms on direct IPv6)
+  // Tier 1: Google Public STUN (Direct zero-relay P2P - Unlimited Free - 2ms on LAN, <20ms on direct IPv6)
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
 
-  // Tier 2 (PRIMARY ULTRA-LOW-LATENCY INDIA RELAY - 32ms Average Ping inside India!): Metered India Nodes
-  {
-    urls: [
-      'turn:in.relay.metered.ca:80',
-      'turn:in.relay.metered.ca:443'
-    ],
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
-  },
-
-  // Tier 3 (SECONDARY ASIA RELAY - Singapore Hub - 50ms Ping): Metered Asia
-  {
-    urls: [
-      'turn:sg.relay.metered.ca:80',
-      'turn:sg.relay.metered.ca:443'
-    ],
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
-  },
-
-  // Tier 4 (TERTIARY GLOBAL BACKUP RELAY): ExpressTURN
+  // Tier 2 (PRIMARY UNLIMITED RELAY - 1,000 GB / 1 TB Free Every Month - No Card Required): ExpressTURN
   {
     urls: [
       'turn:free.expressturn.com:3478',
@@ -46,6 +26,16 @@ const DEFAULT_ICE_SERVERS = [
     ],
     username: '000000002108982708',
     credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
+  },
+
+  // Tier 3 (SECONDARY BACKUP RELAY): Metered India Regional Nodes
+  {
+    urls: [
+      'turn:in.relay.metered.ca:80',
+      'turn:in.relay.metered.ca:443'
+    ],
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
   }
 ];
 
