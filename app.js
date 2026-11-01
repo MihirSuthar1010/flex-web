@@ -462,6 +462,16 @@ async function startConnection() {
   processedCandidateKeys.clear();
   checkingStartTime = 0;
 
+  // Clean stale session signaling BEFORE creating new peer connection & gathering candidates
+  if (db) {
+    try {
+      await remove(ref(db, `rooms/${roomId}/candidates`));
+      await remove(ref(db, `rooms/${roomId}/answer`));
+      await remove(ref(db, `rooms/${roomId}/offer`));
+      logEvent('DEBUG', 'SIGNALING', 'Signaling channel cleared for fresh session.');
+    } catch (e) {}
+  }
+
   if (peerConnection) {
     logEvent('WARN', 'WEBRTC', 'Closing existing PeerConnection instance');
     peerConnection.close();
@@ -576,10 +586,6 @@ async function startConnection() {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
     logEvent('INFO', 'SDP', `Local SDP Offer created and set (length: ${offer.sdp.length}).`);
-
-    // Clean only old session signaling data (PRESERVE telemetry history!)
-    await remove(ref(db, `rooms/${roomId}/candidates`));
-    await remove(ref(db, `rooms/${roomId}/answer`));
 
     // Targeted writes
     await set(ref(db, `rooms/${roomId}/offer`), {
