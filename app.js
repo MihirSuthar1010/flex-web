@@ -870,7 +870,6 @@ function getNormalizedCoordinates(e) {
 videoContainer.addEventListener('dragstart', (e) => e.preventDefault());
 if (remoteVideo) remoteVideo.addEventListener('dragstart', (e) => e.preventDefault());
 
-let isMouseDown = false;
 let startTouchX = 0;
 let startTouchY = 0;
 let touchStartTime = 0;
