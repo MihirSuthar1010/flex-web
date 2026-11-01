@@ -581,16 +581,27 @@ async function startConnection() {
     logEvent('INFO', 'WEBRTC', `Connection State -> ${peerConnection.connectionState}`);
   };
 
-  // H. Create & Publish SDP Offer
+  // H. Create & Publish SDP Offer with 60 FPS 4.5 Mbps Bandwidth Profile
   try {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    logEvent('INFO', 'SDP', `Local SDP Offer created and set (length: ${offer.sdp.length}).`);
+    const offer = await peerConnection.createOffer({
+      offerToReceiveVideo: true,
+      offerToReceiveAudio: false
+    });
+
+    // Munge SDP video line to allocate full 4.5 Mbps pipe for constant 60 FPS
+    let sdp = offer.sdp;
+    if (sdp.includes('m=video') && !sdp.includes('b=AS:')) {
+      sdp = sdp.replace(/(m=video [^\r\n]+(?:\r\n|\n))/, '$1b=AS:4500\r\nb=TIAS:4500000\r\n');
+    }
+
+    const modifiedOffer = new RTCSessionDescription({ type: offer.type, sdp: sdp });
+    await peerConnection.setLocalDescription(modifiedOffer);
+    logEvent('INFO', 'SDP', `Local SDP Offer created (60 FPS 4.5M profile, length: ${modifiedOffer.sdp.length}).`);
 
     // Targeted writes
     await set(ref(db, `rooms/${roomId}/offer`), {
-      type: offer.type,
-      sdp: offer.sdp,
+      type: modifiedOffer.type,
+      sdp: modifiedOffer.sdp,
       pin: secretPin,
       timestamp: Date.now()
     });
