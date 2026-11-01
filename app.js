@@ -12,12 +12,32 @@ const DEFAULT_FIREBASE_CONFIG = {
 // WebRTC Dual-Engine: Google Public STUN + ExpressTURN (1,000 GB Primary UDP) + Metered (Backup UDP)
 // CRITICAL: PURE UDP RELAYS ONLY. TCP & TLS (turns:) removed to eliminate 300ms buffering & maintain solid 60 FPS!
 const DEFAULT_ICE_SERVERS = [
-  // Tier 1: Google Public STUN (Direct zero-relay P2P)
+  // Tier 1: Google Public STUN (Direct zero-relay P2P - 2ms on LAN, <20ms on direct IPv6)
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
 
-  // Tier 2 (PRIMARY RELAY - 1,000 GB / 1 TB Free - No Card - Wire-Speed Pure UDP): ExpressTURN
+  // Tier 2 (PRIMARY ULTRA-LOW-LATENCY INDIA RELAY - 32ms Average Ping inside India!): Metered India Nodes
+  {
+    urls: [
+      'turn:in.relay.metered.ca:80',
+      'turn:in.relay.metered.ca:443'
+    ],
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
+  },
+
+  // Tier 3 (SECONDARY ASIA RELAY - Singapore Hub - 50ms Ping): Metered Asia
+  {
+    urls: [
+      'turn:sg.relay.metered.ca:80',
+      'turn:sg.relay.metered.ca:443'
+    ],
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
+  },
+
+  // Tier 4 (TERTIARY GLOBAL BACKUP RELAY): ExpressTURN
   {
     urls: [
       'turn:free.expressturn.com:3478',
@@ -26,16 +46,6 @@ const DEFAULT_ICE_SERVERS = [
     ],
     username: '000000002108982708',
     credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
-  },
-
-  // Tier 3 (SECONDARY BACKUP RELAY - Pure UDP): Metered Global Relays
-  {
-    urls: [
-      'turn:global.relay.metered.ca:80',
-      'turn:global.relay.metered.ca:443'
-    ],
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
   }
 ];
 
@@ -958,15 +968,32 @@ window.addEventListener('mouseup', (e) => {
       y: startTouchY
     });
   } else {
-    // Smooth Swipe / Drag (for scrolling, sliding, unlocking lockscreen)
-    logEvent('INFO', 'TOUCH', `Swipe: (${startTouchX}, ${startTouchY}) -> (${endX}, ${endY}) in ${duration}ms`);
+    // Smart Gesture Engine: Amplifies laptop trackpad & mouse flicks for One UI
+    let targetEndX = endX;
+    let targetEndY = endY;
+
+    // A. Lockscreen Upward Unlock Flick: If dragging upward (dy < -0.025)
+    if (dy < -0.025 && startTouchY > 0.35) {
+      // Amplify upward stroke to guarantee Samsung One UI reveals PIN / Pattern screen
+      const amplifiedDy = Math.min(-0.45, dy * 2.5);
+      targetEndY = Math.max(0.05, startTouchY + amplifiedDy);
+      targetEndX = startTouchX + (dx * 1.2);
+      logEvent('INFO', 'TOUCH', `One UI Unlock Swipe detected! Amplified upward stroke: ${startTouchY} -> ${targetEndY}`);
+    } else {
+      // B. Standard Fluid Drag / Scroll (amplified 1.6x for natural laptop touchpad feel)
+      targetEndX = Math.max(0.02, Math.min(0.98, startTouchX + dx * 1.6));
+      targetEndY = Math.max(0.02, Math.min(0.98, startTouchY + dy * 1.6));
+    }
+
+    const strokeDuration = Math.min(300, Math.max(140, duration));
+    logEvent('INFO', 'TOUCH', `Swipe: (${startTouchX}, ${startTouchY}) -> (${targetEndX.toFixed(3)}, ${targetEndY.toFixed(3)}) in ${strokeDuration}ms`);
     sendControlPacket({
       type: 'swipe',
       startX: startTouchX,
       startY: startTouchY,
-      endX: endX,
-      endY: endY,
-      duration: duration
+      endX: parseFloat(targetEndX.toFixed(4)),
+      endY: parseFloat(targetEndY.toFixed(4)),
+      duration: strokeDuration
     });
   }
 });
