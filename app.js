@@ -9,12 +9,26 @@ const DEFAULT_FIREBASE_CONFIG = {
   databaseURL: "https://flex-29864-default-rtdb.firebaseio.com"
 };
 
-// WebRTC Google Public STUN & Metered Global TURN Relay Configuration
+// WebRTC Dual-Engine: Google Public STUN + ExpressTURN (1,000 GB Primary) + Metered (Backup)
 const DEFAULT_ICE_SERVERS = [
+  // Tier 1: Google Public STUN (Direct zero-relay P2P)
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun.relay.metered.ca:80' },
+
+  // Tier 2 (PRIMARY RELAY - 1,000 GB / 1 TB Monthly Free - No Card): ExpressTURN
+  {
+    urls: 'turn:free.expressturn.com:3478',
+    username: '000000002108982708',
+    credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
+  },
+  {
+    urls: 'turn:free.expressturn.com:3478?transport=tcp',
+    username: '000000002108982708',
+    credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
+  },
+
+  // Tier 3 (SECONDARY BACKUP RELAY): Metered Global Cloud Relays
   {
     urls: 'turn:global.relay.metered.ca:80',
     username: '6dab0fe06267262ee090724b',
