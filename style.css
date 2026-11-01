@@ -561,19 +561,21 @@ body {
   right: 0;
   background: #090c12;
   border-top: 1px solid var(--border-color);
-  z-index: 50;
+  z-index: 100;
   transition: all 0.25s ease;
-  max-height: 38px;
+  height: 38px;
   display: flex;
   flex-direction: column;
 }
 
 .telemetry-drawer.expanded {
-  max-height: 260px;
+  height: 380px;
+  max-height: 55vh;
 }
 
 .drawer-header {
   height: 38px;
+  min-height: 38px;
   background: var(--bg-secondary);
   display: flex;
   align-items: center;
@@ -623,14 +625,36 @@ body {
 
 .drawer-content {
   flex: 1;
+  min-height: 0;
   background: #05070a;
   padding: 10px 16px;
-  overflow-y: auto;
+  overflow-y: scroll;
+  overflow-x: hidden;
   font-family: var(--font-mono);
   font-size: 0.7rem;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overscroll-behavior: contain;
+  user-select: text;
+  pointer-events: auto;
+}
+
+.drawer-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.drawer-content::-webkit-scrollbar-track {
+  background: #090c12;
+}
+
+.drawer-content::-webkit-scrollbar-thumb {
+  background: #2a364f;
+  border-radius: 4px;
+}
+
+.drawer-content::-webkit-scrollbar-thumb:hover {
+  background: #00e5ff;
 }
 
 .log-entry {

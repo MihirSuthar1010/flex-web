@@ -125,11 +125,14 @@ function logEvent(level, tag, message) {
 
   // C. Visual Telemetry Drawer
   if (drawerContent) {
+    const isAtBottom = (drawerContent.scrollHeight - drawerContent.scrollTop) <= (drawerContent.clientHeight + 60);
     const entry = document.createElement('div');
     entry.className = `log-entry ${level.toLowerCase()}`;
     entry.textContent = logLine;
     drawerContent.appendChild(entry);
-    drawerContent.scrollTop = drawerContent.scrollHeight;
+    if (isAtBottom) {
+      drawerContent.scrollTop = drawerContent.scrollHeight;
+    }
   }
 
   // D. Firebase RTDB Sync (Async non-blocking)
