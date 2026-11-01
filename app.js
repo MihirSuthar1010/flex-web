@@ -1111,13 +1111,24 @@ btnLockScreen.addEventListener('click', () => {
   sendControlPacket({ type: 'key_action', action: 'LOCK' });
 });
 
-// Fullscreen
+// Fullscreen (Centers Samsung 20:9 phone proportionally without horizontal stretch)
 btnFullscreen.addEventListener('click', () => {
   if (!document.fullscreenElement) {
-    videoContainer.requestFullscreen().catch(err => alert(err.message));
+    videoContainer.requestFullscreen().catch(err => {
+      logEvent('WARN', 'DISPLAY', `Fullscreen request failed: ${err.message}`);
+    });
   } else {
     document.exitFullscreen();
   }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  const isFs = !!document.fullscreenElement;
+  const label = btnFullscreen.querySelector('span');
+  if (label) {
+    label.innerText = isFs ? 'Exit' : 'Expand';
+  }
+  logEvent('INFO', 'DISPLAY', `Display mode: ${isFs ? 'Immersive Fullscreen (Centered 20:9)' : 'Standard Stage'}`);
 });
 
 // Wake & Connect

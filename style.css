@@ -340,13 +340,59 @@ body {
   height: 100%;
   position: relative;
   cursor: crosshair;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #remoteVideo {
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
   display: block;
+  background: #000;
+}
+
+/* Fullscreen Display Mode: Keep Samsung 20:9 Phone Centered, Huge, and Aspect-Ratio Locked */
+:fullscreen,
+:-webkit-full-screen {
+  background: #030712 !important;
+}
+
+.video-container:fullscreen,
+.video-container:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  background: #030712 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: crosshair !important;
+}
+
+.video-container:fullscreen #remoteVideo,
+.video-container:-webkit-full-screen #remoteVideo {
+  height: 100vh !important;
+  width: auto !important;
+  aspect-ratio: 9 / 20 !important;
+  max-width: 100vw !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+  background: #000 !important;
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.95), 0 0 20px rgba(0, 242, 254, 0.15) !important;
+  border-left: 2px solid #1c2230 !important;
+  border-right: 2px solid #1c2230 !important;
+}
+
+.video-container:fullscreen .pin-keypad-overlay,
+.video-container:-webkit-full-screen .pin-keypad-overlay {
+  height: 100vh !important;
+  width: auto !important;
+  aspect-ratio: 9 / 20 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  right: auto !important;
 }
 
 /* Virtual touch cursor dot */
