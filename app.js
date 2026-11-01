@@ -17,23 +17,23 @@ const DEFAULT_ICE_SERVERS = [
   { urls: 'stun:stun.relay.metered.ca:80' },
   {
     urls: 'turn:global.relay.metered.ca:80',
-    username: '80dd7ea4dbe49cb644359347',
-    credential: 'bhz/uCJFTyzdSnnu'
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
   },
   {
     urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-    username: '80dd7ea4dbe49cb644359347',
-    credential: 'bhz/uCJFTyzdSnnu'
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
   },
   {
     urls: 'turn:global.relay.metered.ca:443',
-    username: '80dd7ea4dbe49cb644359347',
-    credential: 'bhz/uCJFTyzdSnnu'
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
   },
   {
     urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-    username: '80dd7ea4dbe49cb644359347',
-    credential: 'bhz/uCJFTyzdSnnu'
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
   }
 ];
 
