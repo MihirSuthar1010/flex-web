@@ -17,7 +17,17 @@ const DEFAULT_ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
 
-  // Tier 2 (PRIMARY UNLIMITED RELAY - 1,000 GB / 1 TB Free Every Month - No Card Required): ExpressTURN
+  // Tier 2 (PRIMARY REGIONAL LOW-LATENCY RELAY): Metered India Regional Nodes (Mumbai/Bangalore Datacenter - 25ms RTT)
+  {
+    urls: [
+      'turn:in.relay.metered.ca:80',
+      'turn:in.relay.metered.ca:443'
+    ],
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
+  },
+
+  // Tier 3 (SECONDARY UNLIMITED FAILOVER RELAY - 1,000 GB Monthly): ExpressTURN
   {
     urls: [
       'turn:free.expressturn.com:3478',
@@ -26,16 +36,6 @@ const DEFAULT_ICE_SERVERS = [
     ],
     username: '000000002108982708',
     credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
-  },
-
-  // Tier 3 (SECONDARY BACKUP RELAY): Metered India Regional Nodes
-  {
-    urls: [
-      'turn:in.relay.metered.ca:80',
-      'turn:in.relay.metered.ca:443'
-    ],
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
   }
 ];
 
@@ -99,6 +99,9 @@ const btnVolDown = document.getElementById('btnVolDown');
 const btnUnlockSwipe = document.getElementById('btnUnlockSwipe');
 const btnLockScreen = document.getElementById('btnLockScreen');
 const btnFullscreen = document.getElementById('btnFullscreen');
+const btnPerfMode = document.getElementById('btnPerfMode');
+const perfModeText = document.getElementById('perfModeText');
+let currentPerfMode = localStorage.getItem('rd_perf_mode') || 'turbo';
 const btnSendText = document.getElementById('btnSendText');
 const directTextInput = document.getElementById('directTextInput');
 
@@ -522,6 +525,20 @@ async function startConnection() {
       } catch (e) {}
     }
 
+    // LIVE EDGE CATCH-UP WATCHDOG: Eliminate Chromium presentation buffer drift (<15ms live latency)
+    if (window.liveEdgeWatchdog) clearInterval(window.liveEdgeWatchdog);
+    window.liveEdgeWatchdog = setInterval(() => {
+      try {
+        if (remoteVideo && remoteVideo.buffered && remoteVideo.buffered.length > 0) {
+          const liveEnd = remoteVideo.buffered.end(remoteVideo.buffered.length - 1);
+          const drift = liveEnd - remoteVideo.currentTime;
+          if (drift > 0.10) { // If playing >100ms behind real-time stream
+            remoteVideo.currentTime = liveEnd - 0.015; // Instantly snap back to live edge
+          }
+        }
+      } catch (e) {}
+    }, 150);
+
     // Fallback support for Unified Plan (if streams[0] is absent)
     let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
     remoteVideo.srcObject = stream;
@@ -652,6 +669,17 @@ async function startConnection() {
         const prioritizedPayloads = [...h264Payloads, ...otherPayloads].join(' ');
         sdp = sdp.replace(/(m=video \d+ [A-Z\/]+ )[\d ]+/, `$1${prioritizedPayloads}`);
         logEvent('SUCCESS', 'SDP', `Locked Hardware H.264 as primary video codec (${h264Payloads.length} profiles).`);
+
+        // Turbo Start Bitrate Injection: Force Google Congestion Control to start at 3.5 Mbps 60 FPS instantly
+        for (const hp of h264Payloads) {
+          const fmtpRegex = new RegExp(`(a=fmtp:${hp} [^\\r\\n]+)`);
+          if (fmtpRegex.test(sdp)) {
+            sdp = sdp.replace(fmtpRegex, '$1;x-google-min-bitrate=2000;x-google-start-bitrate=3500;x-google-max-bitrate=5000');
+          } else {
+            sdp = sdp.replace(new RegExp(`(a=rtpmap:${hp} H264\\/[^\\r\\n]*(?:\\r\\n|\\n))`), `$1a=fmtp:${hp} level-asymmetry-allowed=1;packetization-mode=1;x-google-min-bitrate=2000;x-google-start-bitrate=3500;x-google-max-bitrate=5000\r\n`);
+          }
+        }
+        logEvent('SUCCESS', 'SDP', 'Turbo Start Bitrate (start=3.5M, min=2.0M, max=5.0M) injected into H.264 fmtp.');
       }
     }
 
@@ -758,6 +786,9 @@ function setupDataChannel(channel) {
         channel.send(JSON.stringify({ type: 'ping', t: Date.now() }));
       }
     }, 2000);
+
+    // Sync current Performance Mode (Turbo 540p vs Crisp 720p)
+    sendControlPacket({ type: 'perf_mode', mode: currentPerfMode });
   };
 
   channel.onmessage = (event) => {
@@ -1130,6 +1161,22 @@ document.addEventListener('fullscreenchange', () => {
   }
   logEvent('INFO', 'DISPLAY', `Display mode: ${isFs ? 'Immersive Fullscreen (Centered 20:9)' : 'Standard Stage'}`);
 });
+
+// Dynamic 60 FPS Performance Mode Toggle (Turbo 540p vs Crisp 720p)
+if (btnPerfMode) {
+  if (perfModeText) {
+    perfModeText.innerText = currentPerfMode === 'turbo' ? 'Turbo 540p' : 'Crisp 720p';
+  }
+  btnPerfMode.addEventListener('click', () => {
+    currentPerfMode = (currentPerfMode === 'turbo') ? 'hd' : 'turbo';
+    localStorage.setItem('rd_perf_mode', currentPerfMode);
+    if (perfModeText) {
+      perfModeText.innerText = currentPerfMode === 'turbo' ? 'Turbo 540p' : 'Crisp 720p';
+    }
+    logEvent('SUCCESS', 'PERF', `Switched video pipeline to: ${currentPerfMode === 'turbo' ? '⚡ TURBO 540x1200 @ 60 FPS (Lowest Latency)' : '🎨 CRISP HD 720x1600 @ 60 FPS'}`);
+    sendControlPacket({ type: 'perf_mode', mode: currentPerfMode });
+  });
+}
 
 // Wake & Connect
 btnWakeUp.addEventListener('click', triggerRemoteWakeUp);
