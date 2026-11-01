@@ -579,15 +579,23 @@ async function startConnection() {
       if (diagAutoAlert) diagAutoAlert.style.display = 'none';
       inspectActiveConnection();
     } else if (state === 'failed' || state === 'disconnected') {
-      logEvent('ERROR', 'ICE', `ICE Connection broken (${state}). Check phone network and standby status.`);
-      updateStatus('offline', 'Disconnected');
+      logEvent('ERROR', 'ICE', `ICE Connection broken (${state}). Auto-reconnecting in 3.5s...`);
+      updateStatus('offline', `Disconnected (${state})`);
       placeholderOverlay.style.display = 'flex';
-      placeholderMsg.innerText = 'Connection lost. Reconnecting...';
+      placeholderMsg.innerText = `Connection lost (${state}). Auto-reconnecting...`;
 
       if (diagAutoAlert) {
-        diagAutoAlert.innerHTML = `⚠️ <strong>[INDUSTRIAL ROOT CAUSE IDENTIFIED]</strong>: Carrier CGNAT dropped direct UDP packets. <strong>Fix:</strong> 1) Put Phone on same Wi-Fi as PC & enter LAN IP in Config (60 FPS direct LAN), OR 2) Enter Metered TURN credentials in Config for 5G locker access.`;
+        diagAutoAlert.innerHTML = `⚠️ <strong>[CONNECTION DROPPED]</strong>: WebRTC connection interrupted (${state}). Auto-reconnect triggered in 3.5 seconds.`;
         diagAutoAlert.style.display = 'block';
       }
+
+      clearTimeout(window.reconnectTimer);
+      window.reconnectTimer = setTimeout(() => {
+        if (!peerConnection || peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
+          logEvent('INFO', 'RECONNECT', 'Triggering auto-reconnect handshake...');
+          startConnection();
+        }
+      }, 3500);
     }
   };
 
@@ -756,7 +764,12 @@ function sendControlPacket(payload) {
   if (dataChannel && dataChannel.readyState === 'open') {
     dataChannel.send(JSON.stringify(payload));
   } else {
-    logEvent('WARN', 'CONTROL', `DataChannel not open. Packet dropped: ${payload.type}`);
+    const chState = dataChannel ? dataChannel.readyState : 'null';
+    logEvent('WARN', 'CONTROL', `DataChannel not open (${chState}). Packet dropped: ${payload.type}`);
+    if (!peerConnection || peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
+      logEvent('INFO', 'AUTO_RETRY', 'User interacted while disconnected. Triggering fresh connection...');
+      startConnection();
+    }
   }
 }
 
@@ -1150,3 +1163,9 @@ btnSaveConfig.addEventListener('click', () => {
 // Init on Page Load
 initFirebase();
 logEvent('INFO', 'SYSTEM', 'FLEX Web Controller Engine Ready. Room: ' + roomId);
+
+// Auto-initiate WebRTC handshake immediately on page load
+setTimeout(() => {
+  logEvent('INFO', 'INIT', 'Auto-starting WebRTC connection handshake on page startup...');
+  startConnection();
+}, 400);
