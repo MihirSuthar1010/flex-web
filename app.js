@@ -48,6 +48,8 @@ const RTC_CONFIG = {
 let app, db;
 let peerConnection = null;
 let dataChannel = null;
+let isConnecting = false;
+let pingInterval = null;
 let roomId = localStorage.getItem('rd_room_id') || 'm52-mihir-secure';
 let secretPin = localStorage.getItem('rd_pin') || '1234';
 let customDbUrl = localStorage.getItem('rd_db_url') || DEFAULT_FIREBASE_CONFIG.databaseURL;
@@ -454,6 +456,12 @@ async function getEffectiveIceServers() {
 }
 
 async function startConnection() {
+  if (isConnecting) {
+    logEvent('WARN', 'HANDSHAKE', 'Handshake already in progress. Ignoring duplicate trigger.');
+    return;
+  }
+  isConnecting = true;
+
   logEvent('INFO', 'INIT', '=== Starting WebRTC Connection Handshake ===');
   updateStatus('connecting', 'Negotiating Handshake...');
   placeholderMsg.innerText = 'Sending wake-up signal & negotiating WebRTC handshake...';
@@ -575,27 +583,37 @@ async function startConnection() {
     if (state === 'checking') {
       checkingStartTime = Date.now();
     } else if (state === 'connected' || state === 'completed') {
+      isConnecting = false;
+      clearTimeout(window.reconnectTimer);
       logEvent('SUCCESS', 'ICE', 'WebRTC ICE Connection ESTABLISHED successfully!');
       if (diagAutoAlert) diagAutoAlert.style.display = 'none';
       inspectActiveConnection();
-    } else if (state === 'failed' || state === 'disconnected') {
-      logEvent('ERROR', 'ICE', `ICE Connection broken (${state}). Auto-reconnecting in 3.5s...`);
-      updateStatus('offline', `Disconnected (${state})`);
+    } else if (state === 'failed') {
+      isConnecting = false;
+      logEvent('ERROR', 'ICE', 'ICE Connection failed (route unreachable). Auto-reconnecting in 3.5s...');
+      updateStatus('offline', 'Connection Failed');
       placeholderOverlay.style.display = 'flex';
-      placeholderMsg.innerText = `Connection lost (${state}). Auto-reconnecting...`;
+      placeholderMsg.innerText = 'Connection failed. Auto-reconnecting...';
 
       if (diagAutoAlert) {
-        diagAutoAlert.innerHTML = `⚠️ <strong>[CONNECTION DROPPED]</strong>: WebRTC connection interrupted (${state}). Auto-reconnect triggered in 3.5 seconds.`;
+        diagAutoAlert.innerHTML = `⚠️ <strong>[CONNECTION FAILED]</strong>: WebRTC route failed. Fresh handshake triggered in 3.5 seconds.`;
         diagAutoAlert.style.display = 'block';
       }
 
       clearTimeout(window.reconnectTimer);
       window.reconnectTimer = setTimeout(() => {
+        startConnection();
+      }, 3500);
+    } else if (state === 'disconnected') {
+      logEvent('WARN', 'ICE', 'ICE Connection momentarily disconnected (NAT glitch). Grace period: waiting 5s before reconnect...');
+      clearTimeout(window.reconnectTimer);
+      window.reconnectTimer = setTimeout(() => {
         if (!peerConnection || peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
-          logEvent('INFO', 'RECONNECT', 'Triggering auto-reconnect handshake...');
+          isConnecting = false;
+          logEvent('INFO', 'RECONNECT', 'Grace period expired. Triggering fresh handshake...');
           startConnection();
         }
-      }, 3500);
+      }, 5000);
     }
   };
 
@@ -733,8 +751,9 @@ function setupDataChannel(channel) {
   channel.onopen = () => {
     logEvent('SUCCESS', 'DATA_CHANNEL', 'DataChannel is OPEN! Ready for touch, keyboard, and gestures.');
     
-    // Heartbeat & RTT Latency Monitor
-    setInterval(() => {
+    // Heartbeat & RTT Latency Monitor (Keeps carrier CGNAT UDP pinholes pinned 24/7)
+    if (pingInterval) clearInterval(pingInterval);
+    pingInterval = setInterval(() => {
       if (channel.readyState === 'open') {
         channel.send(JSON.stringify({ type: 'ping', t: Date.now() }));
       }
@@ -752,6 +771,7 @@ function setupDataChannel(channel) {
   };
 
   channel.onclose = () => {
+    if (pingInterval) clearInterval(pingInterval);
     logEvent('WARN', 'DATA_CHANNEL', 'DataChannel closed.');
   };
 
@@ -766,10 +786,6 @@ function sendControlPacket(payload) {
   } else {
     const chState = dataChannel ? dataChannel.readyState : 'null';
     logEvent('WARN', 'CONTROL', `DataChannel not open (${chState}). Packet dropped: ${payload.type}`);
-    if (!peerConnection || peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
-      logEvent('INFO', 'AUTO_RETRY', 'User interacted while disconnected. Triggering fresh connection...');
-      startConnection();
-    }
   }
 }
 
@@ -1174,7 +1190,38 @@ if (btnOverlaySwipeUp) {
   });
 }
 
-// Step 2: Handle Pin Key clicks
+// Step 2: Handle Pin Key clicks with Sequential Tap Queue
+const pinTapQueue = [];
+let isPinTapping = false;
+
+function processNextPinTap() {
+  if (pinTapQueue.length === 0) {
+    isPinTapping = false;
+    return;
+  }
+  isPinTapping = true;
+  const item = pinTapQueue.shift();
+
+  if (item.btn) {
+    item.btn.classList.add('active');
+    setTimeout(() => item.btn.classList.remove('active'), 120);
+  }
+
+  if (pinDisplayStatus) {
+    pinDisplayStatus.innerText = `Tapped: ${item.digit === 'ENTER' ? 'OK' : item.digit === 'BACKSPACE' ? 'Delete' : item.digit}`;
+  }
+
+  logEvent('INFO', 'PIN_TAP', `Physical Coordinate Tap: ${item.digit} at (${item.x}, ${item.y})`);
+  sendControlPacket({
+    type: 'tap',
+    x: item.x,
+    y: item.y
+  });
+
+  // 90ms safe delay between taps so Android accessibility gesture engine never cancels strokes
+  setTimeout(processNextPinTap, 90);
+}
+
 pinKeys.forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1182,20 +1229,10 @@ pinKeys.forEach(btn => {
     const x = parseFloat(btn.dataset.x);
     const y = parseFloat(btn.dataset.y);
 
-    // Visual button press animation
-    btn.classList.add('active');
-    setTimeout(() => btn.classList.remove('active'), 120);
-
-    if (pinDisplayStatus) {
-      pinDisplayStatus.innerText = `Tapped: ${digit === 'ENTER' ? 'OK' : digit === 'BACKSPACE' ? 'Delete' : digit}`;
+    pinTapQueue.push({ digit, x, y, btn });
+    if (!isPinTapping) {
+      processNextPinTap();
     }
-
-    logEvent('INFO', 'PIN_TAP', `Physical Coordinate Tap: ${digit} at (${x}, ${y})`);
-    sendControlPacket({
-      type: 'tap',
-      x: x,
-      y: y
-    });
   });
 });
 

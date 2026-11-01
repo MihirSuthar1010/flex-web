@@ -816,15 +816,14 @@ body {
   margin: 8px 0 14px 0;
 }
 
-/* 3x4 Pin Grid */
+/* 3x4 Pin Grid (Samsung One UI 5 Lower-Half Ergonomic Alignment) */
 .pin-pad-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  width: 82%;
-  margin: 0 auto;
-  align-content: center;
-  flex: 1;
+  gap: 14px;
+  width: 84%;
+  margin: auto auto 28px auto;
+  align-content: end;
 }
 
 .pin-key {
