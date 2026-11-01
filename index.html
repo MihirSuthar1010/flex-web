@@ -88,6 +88,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             <span>Vol -</span>
           </button>
+          <button class="nav-btn" id="btnUnlockSwipe" title="Swipe Up to Unlock Lockscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            <span>Unlock</span>
+          </button>
           <button class="nav-btn" id="btnLockScreen" title="Lock Device">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             <span>Lock</span>
@@ -131,25 +135,16 @@
       <!-- Right Keyboard & Command Helper -->
       <aside class="sidebar-help">
         <div class="help-card">
-          <h4>⌨️ Keyboard & Mouse Controls</h4>
+          <h4>⌨️ Zero-Lag Hardware Controls</h4>
           <ul>
-            <li><strong>Left Click:</strong> Tap / Select</li>
-            <li><strong>Click & Drag:</strong> Smooth Swipe / Scroll</li>
+            <li><strong>Left Click / Tap:</strong> Instant Tap / Select</li>
+            <li><strong>Click &amp; Drag:</strong> Smooth Swipe / Scroll / Lockscreen Unlock</li>
             <li><strong>Right Click:</strong> Android Back</li>
-            <li><strong>Mouse Wheel:</strong> Scroll Feed / Web</li>
-            <li><strong>Keyboard Typing:</strong> Sends characters straight to phone active input box</li>
-            <li><strong>Enter Key:</strong> Soft Keyboard Submit</li>
-            <li><strong>Backspace:</strong> Delete character</li>
+            <li><strong>Mouse Wheel:</strong> Smooth Feed Scroll</li>
+            <li><strong>Direct Physical Typing:</strong> Type directly on laptop/PC keyboard into any active phone app!</li>
+            <li><strong>Backspace:</strong> Instant delete character</li>
+            <li><strong>Enter / Esc:</strong> Soft keyboard submit / Android Back</li>
           </ul>
-        </div>
-
-        <div class="help-card quick-input">
-          <h4>📝 Remote Text Injection</h4>
-          <p>Type or paste long text directly to phone clipboard:</p>
-          <div class="input-row">
-            <input type="text" id="directTextInput" placeholder="Paste link or text here..." />
-            <button class="btn btn-secondary" id="btnSendText">Send</button>
-          </div>
         </div>
 
         <div class="help-card network-card">

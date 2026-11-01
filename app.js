@@ -9,43 +9,31 @@ const DEFAULT_FIREBASE_CONFIG = {
   databaseURL: "https://flex-29864-default-rtdb.firebaseio.com"
 };
 
-// WebRTC Dual-Engine: Google Public STUN + ExpressTURN (1,000 GB Primary) + Metered (Backup)
+// WebRTC Dual-Engine: Google Public STUN + ExpressTURN (1,000 GB Primary UDP) + Metered (Backup UDP)
+// CRITICAL: PURE UDP RELAYS ONLY. TCP & TLS (turns:) removed to eliminate 300ms buffering & maintain solid 60 FPS!
 const DEFAULT_ICE_SERVERS = [
   // Tier 1: Google Public STUN (Direct zero-relay P2P)
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
 
-  // Tier 2 (PRIMARY RELAY - 1,000 GB / 1 TB Monthly Free - No Card): ExpressTURN
+  // Tier 2 (PRIMARY RELAY - 1,000 GB / 1 TB Free - No Card - Wire-Speed Pure UDP): ExpressTURN
   {
-    urls: 'turn:free.expressturn.com:3478',
-    username: '000000002108982708',
-    credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
-  },
-  {
-    urls: 'turn:free.expressturn.com:3478?transport=tcp',
+    urls: [
+      'turn:free.expressturn.com:3478',
+      'turn:free.expressturn.com:80',
+      'turn:free.expressturn.com:443'
+    ],
     username: '000000002108982708',
     credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
   },
 
-  // Tier 3 (SECONDARY BACKUP RELAY): Metered Global Cloud Relays
+  // Tier 3 (SECONDARY BACKUP RELAY - Pure UDP): Metered Global Relays
   {
-    urls: 'turn:global.relay.metered.ca:80',
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
-  },
-  {
-    urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
-  },
-  {
-    urls: 'turn:global.relay.metered.ca:443',
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
-  },
-  {
-    urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+    urls: [
+      'turn:global.relay.metered.ca:80',
+      'turn:global.relay.metered.ca:443'
+    ],
     username: '6dab0fe06267262ee090724b',
     credential: 'WcPsBcamAOnxb5YQ'
   }
@@ -106,10 +94,9 @@ const btnRecents = document.getElementById('btnRecents');
 const btnNotifications = document.getElementById('btnNotifications');
 const btnVolUp = document.getElementById('btnVolUp');
 const btnVolDown = document.getElementById('btnVolDown');
+const btnUnlockSwipe = document.getElementById('btnUnlockSwipe');
 const btnLockScreen = document.getElementById('btnLockScreen');
 const btnFullscreen = document.getElementById('btnFullscreen');
-const btnSendText = document.getElementById('btnSendText');
-const directTextInput = document.getElementById('directTextInput');
 
 // Modal Elements
 const configModal = document.getElementById('configModal');
@@ -513,6 +500,18 @@ async function startConnection() {
   peerConnection.ontrack = (event) => {
     logEvent('SUCCESS', 'WEBRTC', `Remote track received! Kind: ${event.track.kind}, ID: ${event.track.id}, readyState: ${event.track.readyState}`);
     
+    // ZERO JITTER BUFFER: Eliminate Chromium's default 200-300ms video playback buffer
+    if (event.receiver) {
+      try {
+        if ('playoutDelayHint' in event.receiver) {
+          event.receiver.playoutDelayHint = 0;
+        }
+        if ('jitterBufferTarget' in event.receiver) {
+          event.receiver.jitterBufferTarget = 0;
+        }
+      } catch (e) {}
+    }
+
     // Fallback support for Unified Plan (if streams[0] is absent)
     let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
     remoteVideo.srcObject = stream;
@@ -754,7 +753,7 @@ async function triggerRemoteWakeUp() {
   }
 }
 
-// Active Route Inspection (STUN Direct P2P vs TURNS Port 443)
+// Active Route Inspection (STUN Direct P2P vs ExpressTURN UDP Relay)
 async function inspectActiveConnection() {
   if (!peerConnection) return;
   const stats = await peerConnection.getStats();
@@ -763,11 +762,13 @@ async function inspectActiveConnection() {
       stats.forEach(r => {
         if (r.id === report.remoteCandidateId) {
           if (r.candidateType === 'relay') {
-            iceMode.innerText = 'TURNS (443)';
-            routeBadge.innerText = 'TURNS (TLS 443)';
-            routeBadge.style.color = '#ffb300';
-            routeDesc.innerText = 'Corporate Firewall Bypass Active (Port 443 Encrypted Tunnel)';
-            logEvent('SUCCESS', 'ROUTE', 'Active Route: TURNS Relay via Port 443 (Corporate Firewall Bypassed)');
+            const proto = (r.protocol || 'UDP').toUpperCase();
+            const port = r.port || 3478;
+            iceMode.innerText = `TURN ${proto} (${port})`;
+            routeBadge.innerText = `TURN ${proto} (Port ${port})`;
+            routeBadge.style.color = '#00e676';
+            routeDesc.innerText = 'High-Speed ExpressTURN UDP Relay Active (Zero-Buffering Wire Speed)';
+            logEvent('SUCCESS', 'ROUTE', `Active Route: High-Speed TURN ${proto} Relay (Port ${port})`);
           } else {
             iceMode.innerText = 'STUN (P2P)';
             routeBadge.innerText = 'STUN (Direct P2P)';
@@ -829,7 +830,8 @@ function startMetricsMonitor() {
 }
 
 // ==========================================
-// 4. VIRTUAL TOUCH & MOUSE GESTURES
+// 4. UNIVERSAL POINTER & HARDWARE ENGINE
+// (Laptop Trackpad, Wired & Wireless Mouse, Physical Keyboard)
 // ==========================================
 function getNormalizedCoordinates(e) {
   const rect = remoteVideo.getBoundingClientRect();
@@ -842,57 +844,105 @@ function getNormalizedCoordinates(e) {
   return { x: parseFloat(x.toFixed(4)), y: parseFloat(y.toFixed(4)), rawX: clientX - rect.left, rawY: clientY - rect.top };
 }
 
-videoContainer.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  isMouseDown = true;
+// Prevent browser default video dragging
+videoContainer.addEventListener('dragstart', (e) => e.preventDefault());
+if (remoteVideo) remoteVideo.addEventListener('dragstart', (e) => e.preventDefault());
+
+let pointerActive = false;
+let startPointerX = 0;
+let startPointerY = 0;
+let lastPointerX = 0;
+let lastPointerY = 0;
+let pointerStartTime = 0;
+let pointerCapturedId = null;
+
+videoContainer.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return; // Only primary click (left click / single tap)
+  e.preventDefault();
+
+  pointerActive = true;
+  pointerCapturedId = e.pointerId;
+  try {
+    videoContainer.setPointerCapture(e.pointerId);
+  } catch (err) {}
+
   const coords = getNormalizedCoordinates(e);
+  startPointerX = coords.x;
+  startPointerY = coords.y;
+  lastPointerX = coords.x;
+  lastPointerY = coords.y;
+  pointerStartTime = Date.now();
 
   touchPointer.style.left = `${coords.rawX}px`;
   touchPointer.style.top = `${coords.rawY}px`;
   touchPointer.classList.add('active');
-
-  sendControlPacket({
-    type: 'touch_down',
-    x: coords.x,
-    y: coords.y
-  });
 });
 
-window.addEventListener('mousemove', (e) => {
-  if (!isMouseDown) return;
+videoContainer.addEventListener('pointermove', (e) => {
+  if (!pointerActive) return;
+  e.preventDefault();
+
   const coords = getNormalizedCoordinates(e);
+  lastPointerX = coords.x;
+  lastPointerY = coords.y;
 
   touchPointer.style.left = `${coords.rawX}px`;
   touchPointer.style.top = `${coords.rawY}px`;
-
-  sendControlPacket({
-    type: 'touch_move',
-    x: coords.x,
-    y: coords.y
-  });
 });
 
-window.addEventListener('mouseup', (e) => {
-  if (!isMouseDown) return;
-  isMouseDown = false;
-  const coords = getNormalizedCoordinates(e);
+function handlePointerRelease(e) {
+  if (!pointerActive) return;
+  pointerActive = false;
   touchPointer.classList.remove('active');
 
-  sendControlPacket({
-    type: 'touch_up',
-    x: coords.x,
-    y: coords.y
-  });
-});
+  if (pointerCapturedId !== null) {
+    try {
+      videoContainer.releasePointerCapture(pointerCapturedId);
+    } catch (err) {}
+    pointerCapturedId = null;
+  }
 
-// Right click = Android Back
+  const coords = getNormalizedCoordinates(e);
+  const endX = coords.x;
+  const endY = coords.y;
+  const duration = Math.min(350, Math.max(140, Date.now() - pointerStartTime));
+  const dx = endX - startPointerX;
+  const dy = endY - startPointerY;
+  const dist = Math.hypot(dx, dy);
+
+  // If movement distance < 0.015 (1.5% screen distance), it is an instant TAP
+  if (dist < 0.015) {
+    logEvent('INFO', 'TOUCH', `Instant Tap at (${startPointerX}, ${startPointerY})`);
+    sendControlPacket({
+      type: 'tap',
+      x: startPointerX,
+      y: startPointerY
+    });
+  } else {
+    // Smooth Swipe / Drag gesture (for scrolling, sliding, unlocking lockscreen)
+    logEvent('INFO', 'TOUCH', `Smooth Swipe: (${startPointerX}, ${startPointerY}) -> (${endX}, ${endY}) in ${duration}ms`);
+    sendControlPacket({
+      type: 'swipe',
+      startX: startPointerX,
+      startY: startPointerY,
+      endX: endX,
+      endY: endY,
+      duration: duration
+    });
+  }
+}
+
+videoContainer.addEventListener('pointerup', handlePointerRelease);
+videoContainer.addEventListener('pointercancel', handlePointerRelease);
+
+// Right click = Android Back (Wired/Wireless Mouse & Trackpad two-finger tap)
 videoContainer.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   logEvent('INFO', 'CONTROL', 'Right click -> Android BACK');
   sendControlPacket({ type: 'key_action', action: 'BACK' });
 });
 
-// Mouse wheel = Scroll
+// Mouse wheel = Smooth Feed Scroll
 videoContainer.addEventListener('wheel', (e) => {
   e.preventDefault();
   const coords = getNormalizedCoordinates(e);
@@ -905,18 +955,36 @@ videoContainer.addEventListener('wheel', (e) => {
   });
 }, { passive: false });
 
-// Keyboard Typing
+// Direct Physical Keyboard Typing (Laptop / PC Physical Keyboard -> Phone)
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  // Do not intercept if user is typing inside configuration modal input fields
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+    return;
+  }
 
   if (e.key === 'Backspace') {
     e.preventDefault();
-    sendControlPacket({ type: 'key_action', action: 'BACKSPACE' });
+    logEvent('INFO', 'KEYBOARD', 'Backspace -> Delete character');
+    sendControlPacket({ type: 'backspace' });
   } else if (e.key === 'Enter') {
     e.preventDefault();
+    logEvent('INFO', 'KEYBOARD', 'Enter -> Submit / Action');
     sendControlPacket({ type: 'key_action', action: 'ENTER' });
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    logEvent('INFO', 'KEYBOARD', 'Escape -> Android BACK');
+    sendControlPacket({ type: 'key_action', action: 'BACK' });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    sendControlPacket({ type: 'scroll', direction: 'SCROLL_UP', x: 0.5, y: 0.5 });
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    sendControlPacket({ type: 'scroll', direction: 'SCROLL_DOWN', x: 0.5, y: 0.5 });
   } else if (e.key.length === 1) {
-    sendControlPacket({ type: 'text_input', text: e.key });
+    // Printable characters (Letters, numbers, symbols, space)
+    if (e.key === ' ') e.preventDefault();
+    logEvent('INFO', 'KEYBOARD', `Direct Key: "${e.key}"`);
+    sendControlPacket({ type: 'char_input', char: e.key });
   }
 });
 
@@ -945,6 +1013,12 @@ btnVolDown.addEventListener('click', () => {
   logEvent('INFO', 'BUTTON', 'Volume DOWN clicked');
   sendControlPacket({ type: 'key_action', action: 'VOLUME_DOWN' });
 });
+if (btnUnlockSwipe) {
+  btnUnlockSwipe.addEventListener('click', () => {
+    logEvent('INFO', 'BUTTON', 'Unlock Swipe clicked (One UI Lockscreen Slide)');
+    sendControlPacket({ type: 'unlock_swipe' });
+  });
+}
 btnLockScreen.addEventListener('click', () => {
   logEvent('INFO', 'BUTTON', 'Lock Screen clicked');
   sendControlPacket({ type: 'key_action', action: 'LOCK' });
@@ -956,16 +1030,6 @@ btnFullscreen.addEventListener('click', () => {
     videoContainer.requestFullscreen().catch(err => alert(err.message));
   } else {
     document.exitFullscreen();
-  }
-});
-
-// Direct Text Injection
-btnSendText.addEventListener('click', () => {
-  const text = directTextInput.value.trim();
-  if (text) {
-    logEvent('INFO', 'INPUT', `Injecting text: "${text}"`);
-    sendControlPacket({ type: 'text_input', text: text });
-    directTextInput.value = '';
   }
 });
 
