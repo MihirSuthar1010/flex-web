@@ -97,6 +97,8 @@ const btnVolDown = document.getElementById('btnVolDown');
 const btnUnlockSwipe = document.getElementById('btnUnlockSwipe');
 const btnLockScreen = document.getElementById('btnLockScreen');
 const btnFullscreen = document.getElementById('btnFullscreen');
+const btnSendText = document.getElementById('btnSendText');
+const directTextInput = document.getElementById('directTextInput');
 
 // Modal Elements
 const configModal = document.getElementById('configModal');
@@ -607,6 +609,26 @@ async function startConnection() {
       sdp = sdp.replace(/(m=video [^\r\n]+(?:\r\n|\n))/, '$1b=AS:4500\r\nb=TIAS:4500000\r\n');
     }
 
+    // Prioritize Snapdragon 778G Hardware H.264 as #1 Video Codec (kills Software VP8 CPU lag)
+    const mLineMatch = sdp.match(/m=video \d+ [A-Z\/]+ ([\d ]+)/);
+    if (mLineMatch) {
+      const payloads = mLineMatch[1].trim().split(/\s+/);
+      const h264Payloads = [];
+      const otherPayloads = [];
+      for (const p of payloads) {
+        if (sdp.includes(`a=rtpmap:${p} H264/`)) {
+          h264Payloads.push(p);
+        } else {
+          otherPayloads.push(p);
+        }
+      }
+      if (h264Payloads.length > 0) {
+        const prioritizedPayloads = [...h264Payloads, ...otherPayloads].join(' ');
+        sdp = sdp.replace(/(m=video \d+ [A-Z\/]+ )[\d ]+/, `$1${prioritizedPayloads}`);
+        logEvent('SUCCESS', 'SDP', `Locked Hardware H.264 as primary video codec (${h264Payloads.length} profiles).`);
+      }
+    }
+
     const modifiedOffer = new RTCSessionDescription({ type: offer.type, sdp: sdp });
     await peerConnection.setLocalDescription(modifiedOffer);
     logEvent('INFO', 'SDP', `Local SDP Offer created (60 FPS 4.5M profile, length: ${modifiedOffer.sdp.length}).`);
@@ -831,7 +853,7 @@ function startMetricsMonitor() {
 
 // ==========================================
 // 4. UNIVERSAL POINTER & HARDWARE ENGINE
-// (Laptop Trackpad, Wired & Wireless Mouse, Physical Keyboard)
+// (Laptop Trackpad, Wired & Wireless Mouse, Physical Keyboard, Text Box)
 // ==========================================
 function getNormalizedCoordinates(e) {
   const rect = remoteVideo.getBoundingClientRect();
@@ -848,92 +870,94 @@ function getNormalizedCoordinates(e) {
 videoContainer.addEventListener('dragstart', (e) => e.preventDefault());
 if (remoteVideo) remoteVideo.addEventListener('dragstart', (e) => e.preventDefault());
 
-let pointerActive = false;
-let startPointerX = 0;
-let startPointerY = 0;
-let lastPointerX = 0;
-let lastPointerY = 0;
-let pointerStartTime = 0;
-let pointerCapturedId = null;
+let isMouseDown = false;
+let startTouchX = 0;
+let startTouchY = 0;
+let touchStartTime = 0;
+let touchMoved = false;
+let lastHoverLogTime = 0;
 
-videoContainer.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return; // Only primary click (left click / single tap)
+// Cursor Movement & Hover Feedback (Always visible, live logs)
+videoContainer.addEventListener('mousemove', (e) => {
+  const coords = getNormalizedCoordinates(e);
+  touchPointer.style.left = `${coords.rawX}px`;
+  touchPointer.style.top = `${coords.rawY}px`;
+  touchPointer.style.opacity = '1';
+
+  // Live telemetry hover logging (throttled to 1 sec)
+  const now = Date.now();
+  if (now - lastHoverLogTime > 1000) {
+    logEvent('DEBUG', 'MOUSE', `Cursor hover at (${coords.x}, ${coords.y})`);
+    lastHoverLogTime = now;
+  }
+
+  if (isMouseDown) {
+    const dx = coords.x - startTouchX;
+    const dy = coords.y - startTouchY;
+    if (Math.hypot(dx, dy) > 0.015) {
+      touchMoved = true;
+    }
+  }
+});
+
+videoContainer.addEventListener('mouseleave', () => {
+  if (!isMouseDown) {
+    touchPointer.style.opacity = '0';
+  }
+});
+
+// Primary Click / Tap Down
+videoContainer.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return; // Left click or trackpad tap only
   e.preventDefault();
-
-  pointerActive = true;
-  pointerCapturedId = e.pointerId;
-  try {
-    videoContainer.setPointerCapture(e.pointerId);
-  } catch (err) {}
+  isMouseDown = true;
+  touchMoved = false;
 
   const coords = getNormalizedCoordinates(e);
-  startPointerX = coords.x;
-  startPointerY = coords.y;
-  lastPointerX = coords.x;
-  lastPointerY = coords.y;
-  pointerStartTime = Date.now();
+  startTouchX = coords.x;
+  startTouchY = coords.y;
+  touchStartTime = Date.now();
 
   touchPointer.style.left = `${coords.rawX}px`;
   touchPointer.style.top = `${coords.rawY}px`;
   touchPointer.classList.add('active');
 });
 
-videoContainer.addEventListener('pointermove', (e) => {
-  if (!pointerActive) return;
-  e.preventDefault();
-
-  const coords = getNormalizedCoordinates(e);
-  lastPointerX = coords.x;
-  lastPointerY = coords.y;
-
-  touchPointer.style.left = `${coords.rawX}px`;
-  touchPointer.style.top = `${coords.rawY}px`;
-});
-
-function handlePointerRelease(e) {
-  if (!pointerActive) return;
-  pointerActive = false;
+// Click / Tap Release (Determines Tap vs Swipe)
+window.addEventListener('mouseup', (e) => {
+  if (!isMouseDown) return;
+  isMouseDown = false;
   touchPointer.classList.remove('active');
-
-  if (pointerCapturedId !== null) {
-    try {
-      videoContainer.releasePointerCapture(pointerCapturedId);
-    } catch (err) {}
-    pointerCapturedId = null;
-  }
 
   const coords = getNormalizedCoordinates(e);
   const endX = coords.x;
   const endY = coords.y;
-  const duration = Math.min(350, Math.max(140, Date.now() - pointerStartTime));
-  const dx = endX - startPointerX;
-  const dy = endY - startPointerY;
+  const duration = Math.min(350, Math.max(120, Date.now() - touchStartTime));
+  const dx = endX - startTouchX;
+  const dy = endY - startTouchY;
   const dist = Math.hypot(dx, dy);
 
-  // If movement distance < 0.015 (1.5% screen distance), it is an instant TAP
-  if (dist < 0.015) {
-    logEvent('INFO', 'TOUCH', `Instant Tap at (${startPointerX}, ${startPointerY})`);
+  // If movement distance is small (< 1.8% of screen), treat as instant Tap/Click
+  if (dist < 0.018) {
+    logEvent('INFO', 'TOUCH', `Instant Tap at (${startTouchX}, ${startTouchY})`);
     sendControlPacket({
       type: 'tap',
-      x: startPointerX,
-      y: startPointerY
+      x: startTouchX,
+      y: startTouchY
     });
   } else {
-    // Smooth Swipe / Drag gesture (for scrolling, sliding, unlocking lockscreen)
-    logEvent('INFO', 'TOUCH', `Smooth Swipe: (${startPointerX}, ${startPointerY}) -> (${endX}, ${endY}) in ${duration}ms`);
+    // Smooth Swipe / Drag (for scrolling, sliding, unlocking lockscreen)
+    logEvent('INFO', 'TOUCH', `Swipe: (${startTouchX}, ${startTouchY}) -> (${endX}, ${endY}) in ${duration}ms`);
     sendControlPacket({
       type: 'swipe',
-      startX: startPointerX,
-      startY: startPointerY,
+      startX: startTouchX,
+      startY: startTouchY,
       endX: endX,
       endY: endY,
       duration: duration
     });
   }
-}
-
-videoContainer.addEventListener('pointerup', handlePointerRelease);
-videoContainer.addEventListener('pointercancel', handlePointerRelease);
+});
 
 // Right click = Android Back (Wired/Wireless Mouse & Trackpad two-finger tap)
 videoContainer.addEventListener('contextmenu', (e) => {
@@ -957,7 +981,7 @@ videoContainer.addEventListener('wheel', (e) => {
 
 // Direct Physical Keyboard Typing (Laptop / PC Physical Keyboard -> Phone)
 window.addEventListener('keydown', (e) => {
-  // Do not intercept if user is typing inside configuration modal input fields
+  // Do not intercept if user is typing inside configuration modal or direct text input
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
     return;
   }
@@ -981,12 +1005,30 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     sendControlPacket({ type: 'scroll', direction: 'SCROLL_DOWN', x: 0.5, y: 0.5 });
   } else if (e.key.length === 1) {
-    // Printable characters (Letters, numbers, symbols, space)
     if (e.key === ' ') e.preventDefault();
     logEvent('INFO', 'KEYBOARD', `Direct Key: "${e.key}"`);
     sendControlPacket({ type: 'char_input', char: e.key });
   }
 });
+
+// Remote Text Injection (Box + Send Button)
+if (btnSendText && directTextInput) {
+  const handleSendText = () => {
+    const text = directTextInput.value;
+    if (text) {
+      logEvent('INFO', 'INPUT', `Injecting text: "${text}"`);
+      sendControlPacket({ type: 'text_input', text: text });
+      directTextInput.value = '';
+    }
+  };
+  btnSendText.addEventListener('click', handleSendText);
+  directTextInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSendText();
+    }
+  });
+}
 
 // Navigation Hardware Buttons
 btnBack.addEventListener('click', () => {
