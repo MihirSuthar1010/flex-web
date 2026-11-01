@@ -9,15 +9,36 @@ const DEFAULT_FIREBASE_CONFIG = {
   databaseURL: "https://flex-29864-default-rtdb.firebaseio.com"
 };
 
-// WebRTC Google Public STUN Configuration
+// WebRTC Google Public STUN & Metered Global TURN Relay Configuration
+const DEFAULT_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.relay.metered.ca:80' },
+  {
+    urls: 'turn:global.relay.metered.ca:80',
+    username: '80dd7ea4dbe49cb644359347',
+    credential: 'bhz/uCJFTyzdSnnu'
+  },
+  {
+    urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+    username: '80dd7ea4dbe49cb644359347',
+    credential: 'bhz/uCJFTyzdSnnu'
+  },
+  {
+    urls: 'turn:global.relay.metered.ca:443',
+    username: '80dd7ea4dbe49cb644359347',
+    credential: 'bhz/uCJFTyzdSnnu'
+  },
+  {
+    urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+    username: '80dd7ea4dbe49cb644359347',
+    credential: 'bhz/uCJFTyzdSnnu'
+  }
+];
+
 const RTC_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
-  ],
+  iceServers: DEFAULT_ICE_SERVERS,
   iceCandidatePoolSize: 10
 };
 
@@ -242,13 +263,23 @@ function initFirebase() {
 }
 
 async function getEffectiveIceServers() {
-  let servers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
-  ];
+  let servers = [...DEFAULT_ICE_SERVERS];
+
+  // Dynamic override from Firebase RTDB if available
+  if (db) {
+    try {
+      const snap = await get(ref(db, `rooms/${roomId}/turn_config`));
+      if (snap.exists()) {
+        const remoteTurn = snap.val();
+        if (Array.isArray(remoteTurn) && remoteTurn.length > 0) {
+          servers = remoteTurn;
+          logEvent('INFO', 'TURN', `Loaded ${remoteTurn.length} dynamic TURN relay configs from Firebase.`);
+        }
+      }
+    } catch (e) {
+      logEvent('DEBUG', 'TURN', `Using built-in TURN defaults: ${e.message}`);
+    }
+  }
 
   if (customTurnKey) {
     try {
@@ -322,13 +353,25 @@ async function startConnection() {
     // Fallback support for Unified Plan (if streams[0] is absent)
     let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
     remoteVideo.srcObject = stream;
-    placeholderOverlay.style.display = 'none';
-    if (diagAutoAlert) diagAutoAlert.style.display = 'none';
-    updateStatus('connected', 'Live - Samsung M52 5G');
+    placeholderMsg.innerText = 'Receiving video frames from Samsung M52...';
     startMetricsMonitor();
+
+    const hidePlaceholderWhenReady = () => {
+      if (remoteVideo.videoWidth > 0) {
+        logEvent('SUCCESS', 'VIDEO', `Remote video active! Decoded stream: ${remoteVideo.videoWidth}x${remoteVideo.videoHeight}.`);
+        placeholderOverlay.style.display = 'none';
+        if (diagAutoAlert) diagAutoAlert.style.display = 'none';
+        updateStatus('connected', 'Live - Samsung M52 5G');
+      }
+    };
+
+    remoteVideo.onloadeddata = hidePlaceholderWhenReady;
+    remoteVideo.onplaying = hidePlaceholderWhenReady;
+    remoteVideo.onresize = hidePlaceholderWhenReady;
 
     remoteVideo.play().then(() => {
       logEvent('SUCCESS', 'VIDEO', `Remote video playing (${remoteVideo.videoWidth || 'buffer'}x${remoteVideo.videoHeight || 'buffer'}).`);
+      hidePlaceholderWhenReady();
     }).catch((err) => {
       logEvent('WARN', 'VIDEO', `Autoplay blocked by browser policy: ${err.message}. Click anywhere on player.`);
     });
@@ -588,6 +631,11 @@ function startMetricsMonitor() {
         if (diagBytes) diagBytes.innerText = `${Math.round(bytes / 1024)} KB`;
         if (report.framesDecoded !== undefined && diagFrames) {
           diagFrames.innerText = report.framesDecoded;
+          if (report.framesDecoded > 0 && placeholderOverlay.style.display !== 'none') {
+            placeholderOverlay.style.display = 'none';
+            if (diagAutoAlert) diagAutoAlert.style.display = 'none';
+            updateStatus('connected', 'Live - Samsung M52 5G');
+          }
         }
 
         if (report.framesPerSecond !== undefined) {
