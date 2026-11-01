@@ -17,17 +17,7 @@ const DEFAULT_ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
 
-  // Tier 2 (PRIMARY REGIONAL LOW-LATENCY RELAY): Metered India Regional Nodes (Mumbai/Bangalore Datacenter - 25ms RTT)
-  {
-    urls: [
-      'turn:in.relay.metered.ca:80',
-      'turn:in.relay.metered.ca:443'
-    ],
-    username: '6dab0fe06267262ee090724b',
-    credential: 'WcPsBcamAOnxb5YQ'
-  },
-
-  // Tier 3 (SECONDARY UNLIMITED FAILOVER RELAY - 1,000 GB Monthly): ExpressTURN
+  // Tier 2 (PRIMARY UNLIMITED RELAY - 1,000 GB Monthly): ExpressTURN
   {
     urls: [
       'turn:free.expressturn.com:3478',
@@ -36,6 +26,16 @@ const DEFAULT_ICE_SERVERS = [
     ],
     username: '000000002108982708',
     credential: 'ypQoJRECm7eeyGbEn4hBE2TXJ2w='
+  },
+
+  // Tier 3 (EMERGENCY BACKUP RELAY ONLY - 500 MB Free Quota): Metered India Regional Nodes
+  {
+    urls: [
+      'turn:in.relay.metered.ca:80',
+      'turn:in.relay.metered.ca:443'
+    ],
+    username: '6dab0fe06267262ee090724b',
+    credential: 'WcPsBcamAOnxb5YQ'
   }
 ];
 
